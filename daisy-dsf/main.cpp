@@ -71,6 +71,59 @@ float fmDepth = 0.0f;
 bool encoderLongPress = false;
 uint32_t encoderPressTime = 0;
 
+// MIDI state tracking
+struct MidiNoteState {
+    uint8_t note;        // MIDI note number (0-127)
+    uint8_t velocity;    // MIDI velocity (0-127)
+    bool active;         // Whether a note is currently playing
+};
+
+MidiNoteState midiCh1 = {0, 127, false};  // Channel 1 -> Oscillator 1
+MidiNoteState midiCh2 = {0, 127, false};  // Channel 2 -> Oscillator 2
+float gain1 = 1.0f;  // Gain for oscillator 1 (velocity-controlled)
+float gain2 = 1.0f;  // Gain for oscillator 2 (velocity-controlled)
+
+// Helper function to convert MIDI note to frequency
+float MidiNoteToFrequency(uint8_t note) {
+    return 440.0f * powf(2.0f, (note - 69) / 12.0f);
+}
+
+// MIDI message handler
+void HandleMidiMessage(MidiEvent m) {
+    switch (m.type) {
+        case NoteOn: {
+            NoteOnEvent noteOn = m.AsNoteOn();
+            // MIDI channels are 0-indexed in the API (0-15), but we want channels 1 & 2 (indices 0 & 1)
+            if (noteOn.channel == 0) {  // MIDI Channel 1
+                midiCh1.note = noteOn.note;
+                midiCh1.velocity = noteOn.velocity;
+                midiCh1.active = (noteOn.velocity > 0);  // Velocity 0 = note off
+                // Update gain based on velocity (normalize to 0.0-1.0)
+                gain1 = noteOn.velocity / 127.0f;
+            } else if (noteOn.channel == 1) {  // MIDI Channel 2
+                midiCh2.note = noteOn.note;
+                midiCh2.velocity = noteOn.velocity;
+                midiCh2.active = (noteOn.velocity > 0);
+                gain2 = noteOn.velocity / 127.0f;
+            }
+            break;
+        }
+        case NoteOff: {
+            NoteOffEvent noteOff = m.AsNoteOff();
+            if (noteOff.channel == 0) {  // MIDI Channel 1
+                midiCh1.active = false;
+                gain1 = 1.0f;  // Return to full gain when note released
+            } else if (noteOff.channel == 1) {  // MIDI Channel 2
+                midiCh2.active = false;
+                gain2 = 1.0f;
+            }
+            break;
+        }
+        default:
+            break;
+    }
+}
+
 void AudioCallback(AudioHandle::InputBuffer in,
                    AudioHandle::OutputBuffer out,
                    size_t size) {
@@ -139,9 +192,9 @@ void AudioCallback(AudioHandle::InputBuffer in,
                 break;
         }
         
-        // Output
-        out[0][i] = sig1;
-        out[1][i] = sig2;
+        // Apply velocity-based gain (defaults to 1.0 when no MIDI input)
+        out[0][i] = sig1 * gain1;
+        out[1][i] = sig2 * gain2;
     }
 }
 
@@ -151,46 +204,81 @@ void UpdateControls() {
     // Pot 1: Base frequency
     float pot1 = hw.GetKnobValue(Bluemchen::CTRL_1);
     float baseFreq = 55.0f * powf(2.0f, pot1 * 7.0f); // 55Hz to 7040Hz
-    
+
     // CV 1: V/Oct pitch control (0-5V = 5 octaves)
     float cv1 = hw.GetKnobValue(Bluemchen::CTRL_3);
     float cvFreq = baseFreq * powf(2.0f, cv1 * 5.0f);
-    
+
+    // Add MIDI frequency offset for channel 1 if active
+    float osc1Freq = cvFreq;
+    if (midiCh1.active) {
+        osc1Freq += MidiNoteToFrequency(midiCh1.note);
+    }
+
     // Smooth frequency changes
-    float smoothedFreq = freqSmooth.Process(cvFreq);
+    float smoothedFreq = freqSmooth.Process(osc1Freq);
     osc1.SetBaseFreq(smoothedFreq);  // Store base freq for TZ-FM
     
     // Set up second oscillator based on output mode
     switch(outputMode) {
-        case STEREO_DETUNE:
-            osc2.SetBaseFreq(smoothedFreq * 1.005f);  // Slight detune
+        case STEREO_DETUNE: {
+            float osc2Freq = smoothedFreq * 1.005f;  // Slight detune
+            // Add MIDI offset for channel 2 if active
+            if (midiCh2.active) {
+                osc2Freq += MidiNoteToFrequency(midiCh2.note);
+            }
+            osc2.SetBaseFreq(osc2Freq);
             osc2.SetNumHarmonics(osc1.GetNumHarmonics());
             osc2.SetAlpha(osc1.GetAlpha());
             osc2.SetAlgorithm(osc1.GetCurrentAlgorithm());
             break;
-            
-        case MAIN_SUB:
-            osc2.SetBaseFreq(smoothedFreq * 0.5f);  // One octave down
+        }
+
+        case MAIN_SUB: {
+            float osc2Freq = smoothedFreq * 0.5f;  // One octave down
+            // Add MIDI offset for channel 2 if active
+            if (midiCh2.active) {
+                osc2Freq += MidiNoteToFrequency(midiCh2.note);
+            }
+            osc2.SetBaseFreq(osc2Freq);
             osc2.SetNumHarmonics(osc1.GetNumHarmonics());
             osc2.SetAlpha(osc1.GetAlpha());
             osc2.SetAlgorithm(osc1.GetCurrentAlgorithm());
             break;
-            
+        }
+
         case DUAL_INDEPENDENT: {
             // Second oscillator controlled independently (could use CV2)
             float cv2val = hw.GetKnobValue(Bluemchen::CTRL_4);
-            osc2.SetBaseFreq(smoothedFreq * powf(2.0f, cv2val * 2.0f));  // +2 octaves
+            float osc2Freq = smoothedFreq * powf(2.0f, cv2val * 2.0f);  // +2 octaves
+            // Add MIDI offset for channel 2 if active
+            if (midiCh2.active) {
+                osc2Freq += MidiNoteToFrequency(midiCh2.note);
+            }
+            osc2.SetBaseFreq(osc2Freq);
             break;
         }
-            
-        case MAIN_RING:
+
+        case MAIN_RING: {
             // Ring mod carrier at different harmonic
-            osc2.SetBaseFreq(smoothedFreq * 1.5f);  // Perfect fifth
+            float osc2Freq = smoothedFreq * 1.5f;  // Perfect fifth
+            // Add MIDI offset for channel 2 if active
+            if (midiCh2.active) {
+                osc2Freq += MidiNoteToFrequency(midiCh2.note);
+            }
+            osc2.SetBaseFreq(osc2Freq);
             break;
-            
-        default:
-            osc2.SetBaseFreq(smoothedFreq);
+        }
+
+        default: {
+            float osc2Freq = smoothedFreq;
+            // Add MIDI offset for channel 2 if active
+            if (midiCh2.active) {
+                osc2Freq += MidiNoteToFrequency(midiCh2.note);
+            }
+            osc2.SetBaseFreq(osc2Freq);
             break;
+        }
     }
     
     // Pot 2: Changes function based on context
@@ -255,21 +343,33 @@ void UpdateDisplay() {
     hw.display.Fill(false);
     
     if (encoderLongPress) {
-        // Extended view: Show output mode
+        // Extended view: Show output mode and MIDI status
         hw.display.SetCursor(0, 0);
         hw.display.WriteString("OUTPUT MODE:", Font_6x8, true);
-        
+
         hw.display.SetCursor(0, 12);
         hw.display.WriteString(outputModeNames[outputMode], Font_6x8, true);
-        
-        // Show FM depth if active
-        if (fmDepth > 0.1f) {
-            char buf[32];
+
+        // Show MIDI status
+        char buf[32];
+        if (midiCh1.active || midiCh2.active) {
+            if (midiCh1.active) {
+                sprintf(buf, "M1:N%d V%d", midiCh1.note, midiCh1.velocity);
+                hw.display.SetCursor(0, 20);
+                hw.display.WriteString(buf, Font_6x8, true);
+            }
+            if (midiCh2.active) {
+                sprintf(buf, "M2:N%d V%d", midiCh2.note, midiCh2.velocity);
+                hw.display.SetCursor(0, 28);
+                hw.display.WriteString(buf, Font_6x8, true);
+            }
+        } else if (fmDepth > 0.1f) {
+            // Show FM depth if active and no MIDI
             sprintf(buf, "FM:%.2f", fmDepth);
             hw.display.SetCursor(0, 24);
             hw.display.WriteString(buf, Font_6x8, true);
         }
-        
+
     } else {
         // Normal view: Algorithm and parameters
         
@@ -351,7 +451,13 @@ int main(void) {
     uint32_t lastDisplayUpdate = 0;
     while(1) {
         UpdateControls();
-        
+
+        // Process MIDI events
+        hw.midi.Listen();
+        while (hw.midi.HasEvents()) {
+            HandleMidiMessage(hw.midi.PopEvent());
+        }
+
         // Update display at ~30Hz
         uint32_t now = System::GetNow();
         if (now - lastDisplayUpdate > 33) {

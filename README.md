@@ -10,14 +10,36 @@ A Discrete Summation Formula (DSF) synthesizer for the kxmx_bluemchen Eurorack m
   - Waveshape - DSF with soft-clipping distortion
   - Complex DSF - Multi-term summation formula
 
+- **Six output modes:**
+  - Mono Dual - Same signal on both outputs
+  - Stereo Detune - Detuned oscillators for width
+  - Dual Independent - Two independent oscillators
+  - Main+Sub - Sub-octave on output 2
+  - Main+Ring - Ring modulation
+  - Main+Process - External audio processing
+
+- **MIDI support:**
+  - Polyphonic on channels 1 & 2 (one note per channel)
+  - Note pitch added to frequency controls
+  - Velocity controls output gain
+  - Works with existing pot/CV controls
+
+- **Advanced features:**
+  - Through-zero FM via audio input 1
+  - External audio processing via input 2
+  - Dual oscillators with independent control
+  - V/Oct pitch tracking (5 octave range)
+  - Real-time OLED display
+
 - **Real-time control:**
   - Pot 1: Base frequency (55Hz - 7kHz)
-  - Pot 2: Number of harmonics (1-50)
-  - CV 1: V/Oct pitch control (5 octave range)
-  - CV 2: Alpha/rolloff parameter (0.0-0.99)
-  - Encoder: Algorithm selection
-
-- **OLED display** shows current algorithm, frequency, harmonics, and alpha values
+  - Pot 2: Number of harmonics (1-50, context-dependent)
+  - CV 1: V/Oct pitch control
+  - CV 2: Alpha/rolloff parameter OR FM depth
+  - Encoder: Algorithm selection (rotate), Output mode (press)
+  - Audio In 1: Through-zero FM modulator
+  - Audio In 2: External audio for processing/ring mod
+  - MIDI In: Note control on channels 1 & 2
 
 ## Prerequisites
 
@@ -125,30 +147,67 @@ bluemchen-workspace/
 
 ## Usage
 
+For detailed operation instructions, see [docs/dsf-manual.md](docs/dsf-manual.md).
+
+### Quick Start
+
+1. **Select an algorithm**: Rotate the encoder
+2. **Adjust frequency**: Turn Knob 1
+3. **Add harmonics**: Turn Knob 2
+4. **Change output mode**: Short press the encoder
+5. **View extended info**: Long press (>500ms) the encoder
+
 ### Controls
 
-- **Knob 1 (top)**: Base frequency
+- **Knob 1**: Base frequency
   - Range: 55 Hz to 7040 Hz (7 octaves)
   - Maps exponentially for musical tuning
+  - MIDI notes are added to this frequency
 
-- **Knob 2 (bottom)**: Number of harmonics
+- **Knob 2**: Number of harmonics
   - Range: 1 to 50 partials
-  - Lower values = purer tones
-  - Higher values = richer, more complex timbres
+  - In Dual Independent mode: controls oscillator 2 harmonics
+  - Lower values = purer tones, higher = richer timbres
 
 - **CV Input 1**: V/Oct pitch control
   - Adds to base frequency
   - Range: 5 octaves
-  - Can be used with a keyboard or sequencer
+  - Works alongside MIDI input
 
-- **CV Input 2**: Alpha parameter
-  - Controls the rolloff/damping of harmonics
-  - Range: 0.0 to 0.99
-  - Lower = brighter, higher = darker
+- **CV Input 2**: Context-dependent
+  - When > 0.1V: FM depth control
+  - When near 0V: Alpha/rolloff parameter (0.0-0.99)
+  - In Dual Independent mode: Oscillator 2 pitch offset
 
-- **Encoder (rotate)**: Select algorithm
-  - Rotate to cycle through 4 algorithms
-  - Current algorithm displayed on OLED
+- **Audio Input 1**: Through-zero FM modulator
+  - Modulates oscillator 1 frequency
+  - Negative frequencies cause phase reversal
+  - FM depth controlled by CV 2
+
+- **Audio Input 2**: External audio
+  - Ring modulation carrier (Main+Ring mode)
+  - Audio to process (Main+Process mode)
+
+- **MIDI Input**: Note control
+  - Channel 1 → Oscillator 1 (Output 1)
+  - Channel 2 → Oscillator 2 (Output 2)
+  - Note pitch adds to frequency controls
+  - Velocity scales output gain (0-127)
+  - No MIDI = full gain (normal operation)
+
+- **Encoder**:
+  - Rotate: Cycle through algorithms
+  - Short press: Cycle through output modes
+  - Long press (>500ms): Toggle display view
+
+### Output Modes
+
+1. **Mono Dual** (M): Identical signal on both outputs
+2. **Stereo Detune** (S): Output 2 detuned +0.5%
+3. **Dual Independent** (D): Two independent oscillators
+4. **Main+Sub** (B): Output 2 is sub-octave (-1 octave)
+5. **Main+Ring** (R): Output 2 is ring modulated
+6. **Main+Process** (P): Output 2 processes external audio
 
 ### Algorithms Explained
 
@@ -212,6 +271,12 @@ bluemchen-workspace/
 **Display not updating**
 - Press RESET button on Daisy Seed
 - Reflash firmware
+
+**MIDI not working**
+- Check MIDI cable is connected to bluemchen MIDI IN
+- Verify sending on MIDI channels 1 or 2
+- Try sending a note on event (velocity > 0)
+- Check MIDI indicator on extended display (long press encoder)
 
 ## Algorithm Theory
 
