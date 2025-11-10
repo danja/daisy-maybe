@@ -178,6 +178,45 @@ The module implements four Discrete Summation Formula algorithms, each with uniq
 - Works beautifully with slow LFO on alpha
 - Great for ambient and experimental patches
 
+### 5. Resonator Delay
+
+**Character**: Dual independent resonator delays with pitch tracking
+
+**Implementation**: Two delay lines process external audio inputs with V/Oct pitch control
+
+**Parameters**:
+- **POT 1**: Base delay time (1-250ms, exponential)
+- **CV 1**: V/Oct delay time modulation (5 octave range)
+- **CV 2**: Delay ratio for channel 2 (1:1 to 1:4 relative to channel 1)
+- **MIDI Ch 1**: Pitch control for delay 1 (higher pitch = shorter delay)
+- **MIDI Ch 2**: Pitch control for delay 2
+
+**Signal Flow**:
+- Audio In 1 → Delay Line 1 → Out 1
+- Audio In 2 → Delay Line 2 → Out 2
+- Independent delay times for each channel
+
+**Sound**:
+- Resonant metallic timbres when delays are short
+- Karplus-Strong-style plucked sounds
+- Stereo delay effects with ratio control
+- Pitch-tracking delays for musical intervals
+
+**Tips**:
+- Short delays (1-20ms): Resonant, comb filter-like tones
+- Medium delays (20-100ms): Slapback echo effects
+- CV 2 at 50% creates a perfect octave relationship (1:2 ratio)
+- CV 2 at 100% creates two-octave spread (1:4 ratio)
+- Patch percussive sounds for physical modeling resonance
+- Use MIDI to play delay times like a pitched instrument
+- External feedback (patch outputs back to inputs) creates self-oscillation
+
+**Control Mapping**:
+- Harmonics control (POT 2) has no effect in this mode
+- Alpha parameter unused
+- Through-zero FM disabled
+- Output modes have no effect (always independent channels)
+
 ## Output Modes
 
 The module features six output routing configurations. Switch modes by **short pressing the encoder**.

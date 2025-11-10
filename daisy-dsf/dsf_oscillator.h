@@ -8,6 +8,9 @@
 #pragma once
 
 #include <math.h>
+#include "Utility/delayline.h"
+
+using namespace daisysp;
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846f
@@ -23,7 +26,8 @@ public:
         CLASSIC_DSF,      // Classic Moorer DSF
         MODIFIED_FM,      // FM-style DSF
         WAVESHAPE,        // DSF with waveshaping
-        COMPLEX_DSF       // Complex multi-term DSF
+        COMPLEX_DSF,      // Complex multi-term DSF
+        RESONATOR_DELAY   // Dual resonator delays
     };
     
     DSFOscillator() {
@@ -38,12 +42,18 @@ public:
         throughZero_ = false;
         phaseReversed_ = false;
         currentAmplitude_ = 0.0f;
+        delayTime1_ = 100.0f;  // 100ms default
+        delayTime2_ = 100.0f;
+        audioInput1_ = 0.0f;
+        audioInput2_ = 0.0f;
     }
     
     void Init(float sampleRate) {
         sampleRate_ = sampleRate;
         phase_ = 0.0f;
         UpdatePhaseIncrement();
+        delayLine1_.Init();
+        delayLine2_.Init();
     }
     
     float Process() {
@@ -61,6 +71,9 @@ public:
                 break;
             case COMPLEX_DSF:
                 output = ProcessComplexDSF();
+                break;
+            case RESONATOR_DELAY:
+                output = ProcessResonatorDelay();
                 break;
         }
         
@@ -119,7 +132,30 @@ public:
             phaseReversed_ = false;
         }
     }
-    
+
+    // Resonator delay setters
+    void SetDelayTime1(float timeMs) {
+        // Clamp delay time to valid range (1ms - 250ms)
+        if (timeMs < 1.0f) timeMs = 1.0f;
+        if (timeMs > 250.0f) timeMs = 250.0f;
+        delayTime1_ = timeMs;
+    }
+
+    void SetDelayTime2(float timeMs) {
+        // Clamp delay time to valid range (1ms - 250ms)
+        if (timeMs < 1.0f) timeMs = 1.0f;
+        if (timeMs > 250.0f) timeMs = 250.0f;
+        delayTime2_ = timeMs;
+    }
+
+    void SetAudioInput1(float input) {
+        audioInput1_ = input;
+    }
+
+    void SetAudioInput2(float input) {
+        audioInput2_ = input;
+    }
+
     // Getters
     float GetFreq() const { return freq_; }
     float GetBaseFreq() const { return baseFreq_; }
@@ -141,6 +177,14 @@ private:
     bool throughZero_;
     bool phaseReversed_;
     float currentAmplitude_;
+
+    // Resonator delay members
+    DelayLine<float, 12000> delayLine1_;  // 250ms max delay for channel 1 (@ 48kHz)
+    DelayLine<float, 12000> delayLine2_;  // 250ms max delay for channel 2
+    float delayTime1_;  // Delay time in milliseconds
+    float delayTime2_;  // Delay time in milliseconds
+    float audioInput1_;  // Audio input for channel 1
+    float audioInput2_;  // Audio input for channel 2
     
     void UpdatePhaseIncrement() {
         phaseInc_ = (M_TWOPI * freq_) / sampleRate_;
@@ -234,7 +278,7 @@ private:
      */
     float Waveshape(float x, float gain) {
         x *= gain;
-        
+
         // Tanh-like soft clipper
         if (x > 1.0f) {
             return 2.0f / 3.0f + (x - 1.0f) / 3.0f;
@@ -243,5 +287,36 @@ private:
         } else {
             return x - (x * x * x) / 3.0f;
         }
+    }
+
+    /**
+     * Resonator Delay
+     * Processes audio inputs through independent resonator delays
+     * Returns channel 1 output (channel 2 handled separately in main)
+     */
+    float ProcessResonatorDelay() {
+        // Convert delay time from milliseconds to samples
+        float delaySamples1 = (delayTime1_ / 1000.0f) * sampleRate_;
+        float delaySamples2 = (delayTime2_ / 1000.0f) * sampleRate_;
+
+        // Write current input to delay lines
+        delayLine1_.Write(audioInput1_);
+        delayLine2_.Write(audioInput2_);
+
+        // Read delayed output with interpolation
+        float output1 = delayLine1_.Read(delaySamples1);
+
+        // Return channel 1 output
+        // (Channel 2 will be read separately by calling GetDelayOutput2())
+        return output1;
+    }
+
+public:
+    /**
+     * Get delay output for channel 2 (used in resonator delay mode)
+     */
+    float GetDelayOutput2() const {
+        float delaySamples2 = (delayTime2_ / 1000.0f) * sampleRate_;
+        return const_cast<DelayLine<float, 12000>&>(delayLine2_).Read(delaySamples2);
     }
 };

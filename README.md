@@ -4,11 +4,12 @@ A Discrete Summation Formula (DSF) synthesizer for the kxmx_bluemchen Eurorack m
 
 ## Features
 
-- **Four DSF algorithms:**
+- **Five synthesis algorithms:**
   - Classic DSF (Moorer 1976) - Band-limited sawtooth-like waveforms
   - Modified FM - DSF with frequency modulation
   - Waveshape - DSF with soft-clipping distortion
   - Complex DSF - Multi-term summation formula
+  - Resonator Delay - Dual independent resonator delays (1ms-250ms)
 
 - **Six output modes:**
   - Mono Dual - Same signal on both outputs
@@ -230,6 +231,15 @@ For detailed operation instructions, see [docs/dsf-manual.md](docs/dsf-manual.md
    - Multi-term DSF formula
    - Mixes fundamental with shifted harmonic series
    - Creates complex, evolving timbres
+
+5. **Resonator Delay**
+   - Dual independent resonator delays
+   - Processes audio inputs through pitch-tracked delays
+   - POT 1: Base delay time (1-250ms)
+   - CV 1: V/Oct delay time modulation
+   - CV 2: Delay ratio (1:1 to 1:4)
+   - MIDI controls delay pitch
+   - IN 1 → Delay 1 → OUT 1, IN 2 → Delay 2 → OUT 2
 
 ## Troubleshooting
 

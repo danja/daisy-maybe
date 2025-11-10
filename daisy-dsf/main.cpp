@@ -58,12 +58,13 @@ const char* outputModeNames[] = {
 
 // Algorithm selection
 int currentAlgorithm = 0;
-const int NUM_ALGORITHMS = 4;
+const int NUM_ALGORITHMS = 5;
 const char* algorithmNames[] = {
     "Classic DSF",
     "Modified FM",
     "Waveshape",
-    "Complex DSF"
+    "Complex DSF",
+    "Resonator Delay"
 };
 
 // Through-zero FM parameters
@@ -129,13 +130,31 @@ void AudioCallback(AudioHandle::InputBuffer in,
                    size_t size) {
     for (size_t i = 0; i < size; i++) {
         // Read audio inputs
-        float audioIn1 = in[0][i];  // Through-zero FM modulator
-        float audioIn2 = in[1][i];  // External audio
-        
+        float audioIn1 = in[0][i];  // Through-zero FM modulator OR Delay input 1
+        float audioIn2 = in[1][i];  // External audio OR Delay input 2
+
+        // Special handling for Resonator Delay algorithm
+        if (currentAlgorithm == DSFOscillator::RESONATOR_DELAY) {
+            // Pass audio inputs to oscillator
+            osc1.SetAudioInput1(audioIn1);
+            osc1.SetAudioInput2(audioIn2);
+
+            // Process delays - osc1.Process() returns delay 1 output
+            float sig1 = osc1.Process();
+            // Get delay 2 output separately
+            float sig2 = osc1.GetDelayOutput2();
+
+            // Apply velocity-based gain (defaults to 1.0 when no MIDI input)
+            out[0][i] = sig1 * gain1;
+            out[1][i] = sig2 * gain2;
+            continue;  // Skip normal DSF processing
+        }
+
+        // Normal DSF processing (non-delay algorithms)
         // Apply through-zero FM from audio input 1
         float modAmount = fmDepth * audioIn1 * 1000.0f; // Scale for frequency modulation
         float modulatedFreq = osc1.GetFreq() + modAmount;
-        
+
         // Through-zero: allow negative frequencies (phase reversal)
         if (modulatedFreq < 0.0f) {
             osc1.SetThroughZero(true);
@@ -144,7 +163,7 @@ void AudioCallback(AudioHandle::InputBuffer in,
             osc1.SetThroughZero(false);
             osc1.SetFreq(modulatedFreq);
         }
-        
+
         // Generate primary signal
         float sig1 = osc1.Process();
         float sig2 = 0.0f;
@@ -295,22 +314,57 @@ void UpdateControls() {
         osc2.SetNumHarmonics(harmonics);
     }
     
-    // CV 2: FM Depth or Alpha depending on whether audio is patched
+    // CV 2: FM Depth, Alpha, or Delay Ratio depending on algorithm
     float cv2 = hw.GetKnobValue(Bluemchen::CTRL_4);
-    
-    // Check if we're receiving audio input for FM
-    // (This is a simplified check - in practice you'd want to 
-    // detect actual audio presence)
-    if (cv2 > 0.1f) {
-        // Use CV2 as FM depth
-        fmDepth = fmDepthSmooth.Process(cv2 * 2.0f);  // 0-2 range
+
+    // Special handling for Resonator Delay algorithm
+    if (currentAlgorithm == DSFOscillator::RESONATOR_DELAY) {
+        // For Resonator Delay: Calculate delay times
+        // POT 1: Base delay time (1ms - 250ms, exponential mapping)
+        float baseDelayMs = 1.0f * powf(2.0f, pot1 * 7.97f); // 1ms to ~250ms
+
+        // CV 1: V/Oct style offset (5 octaves range)
+        float delayMultiplier = powf(2.0f, cv1 * 5.0f);
+        float delay1Ms = baseDelayMs * delayMultiplier;
+
+        // Add MIDI pitch offset (converts pitch to delay time offset)
+        if (midiCh1.active) {
+            // Higher MIDI note = shorter delay (higher pitch)
+            float midiPitchRatio = MidiNoteToFrequency(midiCh1.note) / 440.0f;
+            delay1Ms = delay1Ms / midiPitchRatio;  // Inverse relationship
+        }
+
+        // CV 2: Delay ratio from 1:1 to 1:4
+        float delayRatio = 1.0f + (cv2 * 3.0f);  // 1.0 to 4.0
+        float delay2Ms = delay1Ms * delayRatio;
+
+        // Add MIDI pitch offset for channel 2
+        if (midiCh2.active) {
+            float midiPitchRatio2 = MidiNoteToFrequency(midiCh2.note) / 440.0f;
+            delay2Ms = delay2Ms / midiPitchRatio2;
+        }
+
+        // Set delay times
+        osc1.SetDelayTime1(delay1Ms);
+        osc1.SetDelayTime2(delay2Ms);
+        osc2.SetDelayTime1(delay1Ms);
+        osc2.SetDelayTime2(delay2Ms);
     } else {
-        // Use CV2 as alpha/rolloff
-        float alpha = alphaSmooth.Process(cv2);
-        osc1.SetAlpha(alpha);
-        osc2.SetAlpha(alpha);
+        // For other algorithms: FM Depth or Alpha
+        // Check if we're receiving audio input for FM
+        // (This is a simplified check - in practice you'd want to
+        // detect actual audio presence)
+        if (cv2 > 0.1f) {
+            // Use CV2 as FM depth
+            fmDepth = fmDepthSmooth.Process(cv2 * 2.0f);  // 0-2 range
+        } else {
+            // Use CV2 as alpha/rolloff
+            float alpha = alphaSmooth.Process(cv2);
+            osc1.SetAlpha(alpha);
+            osc2.SetAlpha(alpha);
+        }
     }
-    
+
     // Encoder rotation: Algorithm selection
     int encInc = hw.encoder.Increment();
     if (encInc != 0) {
