@@ -4,12 +4,13 @@ A Discrete Summation Formula (DSF) synthesizer for the kxmx_bluemchen Eurorack m
 
 ## Features
 
-- **Five synthesis algorithms:**
+- **Six synthesis algorithms:**
   - Classic DSF (Moorer 1976) - Band-limited sawtooth-like waveforms
   - Modified FM - DSF with frequency modulation
   - Waveshape - DSF with soft-clipping distortion
   - Complex DSF - Multi-term summation formula
   - Resonator Delay - Dual independent resonator delays (1ms-250ms)
+  - Formant Synth - Cascaded formant filter synthesis for vowel-like vocal timbres
 
 - **Six output modes:**
   - Mono Dual - Same signal on both outputs
@@ -240,6 +241,17 @@ For detailed operation instructions, see [docs/dsf-manual.md](docs/dsf-manual.md
    - CV 2: Delay ratio (1:1 to 1:4)
    - MIDI controls delay pitch
    - IN 1 → Delay 1 → OUT 1, IN 2 → Delay 2 → OUT 2
+
+6. **Formant Synth**
+   - Cascaded bandpass filter formant synthesis for vocal timbres
+   - 5 vowel presets (A, E, I, O, U) with authentic formant frequencies
+   - 2D vowel space control for expressive morphing
+   - POT 1: F1 frequency (200-1000 Hz) - jaw/vowel height
+   - POT 2: F2 frequency (500-3000 Hz) - tongue position
+   - Encoder rotation: Cycle through vowel presets
+   - Audio inputs used as excitation by default
+   - MIDI enables internal sawtooth+noise excitation
+   - Dual independent voices for stereo formant processing
 
 ## Troubleshooting
 

@@ -24,6 +24,7 @@
 #include "daisysp.h"
 #include "kxmx_bluemchen.h"
 #include "dsf_oscillator.h"
+#include "formant_synth.h"
 
 using namespace daisy;
 using namespace daisysp;
@@ -31,9 +32,12 @@ using namespace kxmx;
 
 Bluemchen hw;
 DSFOscillator osc1, osc2;  // Dual oscillators
+FormantSynth formant1, formant2;  // Dual formant synths
 OnePole freqSmooth;
 OnePole alphaSmooth;
 OnePole fmDepthSmooth;
+OnePole f1Smooth, f2Smooth;  // Smoothing for formant frequencies
+int currentVowel = 0;  // Vowel preset index (0=A, 1=E, 2=I, 3=O, 4=U)
 
 // Output modes
 enum OutputMode {
@@ -58,13 +62,14 @@ const char* outputModeNames[] = {
 
 // Algorithm selection
 int currentAlgorithm = 0;
-const int NUM_ALGORITHMS = 5;
+const int NUM_ALGORITHMS = 6;
 const char* algorithmNames[] = {
     "Classic DSF",
     "Modified FM",
     "Waveshape",
     "Complex DSF",
-    "Resonator Delay"
+    "Resonator Delay",
+    "Formant Synth"
 };
 
 // Through-zero FM parameters
@@ -91,6 +96,46 @@ float MidiNoteToFrequency(uint8_t note) {
 
 // MIDI message handler
 void HandleMidiMessage(MidiEvent m) {
+    // Special handling for Formant Synth mode
+    if (currentAlgorithm == 5) {  // Formant Synth
+        switch (m.type) {
+            case NoteOn: {
+                NoteOnEvent noteOn = m.AsNoteOn();
+                if (noteOn.channel == 0 && noteOn.velocity > 0) {  // MIDI Channel 1
+                    float freq = MidiNoteToFrequency(noteOn.note);
+                    formant1.SetPitch(freq);
+                    formant1.SetExcitationEnabled(true);
+                    formant1.SetExternalInput(false);
+                    gain1 = noteOn.velocity / 127.0f;
+                } else if (noteOn.channel == 1 && noteOn.velocity > 0) {  // MIDI Channel 2
+                    float freq = MidiNoteToFrequency(noteOn.note);
+                    formant2.SetPitch(freq);
+                    formant2.SetExcitationEnabled(true);
+                    formant2.SetExternalInput(false);
+                    gain2 = noteOn.velocity / 127.0f;
+                }
+                break;
+            }
+            case NoteOff: {
+                NoteOffEvent noteOff = m.AsNoteOff();
+                if (noteOff.channel == 0) {  // MIDI Channel 1
+                    formant1.SetExcitationEnabled(false);
+                    formant1.SetExternalInput(true);
+                    gain1 = 1.0f;
+                } else if (noteOff.channel == 1) {  // MIDI Channel 2
+                    formant2.SetExcitationEnabled(false);
+                    formant2.SetExternalInput(true);
+                    gain2 = 1.0f;
+                }
+                break;
+            }
+            default:
+                break;
+        }
+        return;  // Don't process MIDI for DSF oscillators in formant mode
+    }
+
+    // Normal MIDI handling for DSF oscillators
     switch (m.type) {
         case NoteOn: {
             NoteOnEvent noteOn = m.AsNoteOn();
@@ -130,8 +175,20 @@ void AudioCallback(AudioHandle::InputBuffer in,
                    size_t size) {
     for (size_t i = 0; i < size; i++) {
         // Read audio inputs
-        float audioIn1 = in[0][i];  // Through-zero FM modulator OR Delay input 1
-        float audioIn2 = in[1][i];  // External audio OR Delay input 2
+        float audioIn1 = in[0][i];  // Through-zero FM modulator OR Delay input 1 OR Formant excitation 1
+        float audioIn2 = in[1][i];  // External audio OR Delay input 2 OR Formant excitation 2
+
+        // Special handling for Formant Synth algorithm
+        if (currentAlgorithm == 5) {  // Formant Synth
+            // Process formant synthesis with audio inputs as excitation
+            float sig1 = formant1.Process(audioIn1);
+            float sig2 = formant2.Process(audioIn2);
+
+            // Apply velocity-based gain (defaults to 1.0 when no MIDI input)
+            out[0][i] = sig1 * gain1;
+            out[1][i] = sig2 * gain2;
+            continue;  // Skip normal DSF processing
+        }
 
         // Special handling for Resonator Delay algorithm
         if (currentAlgorithm == DSFOscillator::RESONATOR_DELAY) {
@@ -365,14 +422,42 @@ void UpdateControls() {
         }
     }
 
-    // Encoder rotation: Algorithm selection
+    // Special handling for Formant Synth algorithm
+    if (currentAlgorithm == 5) {  // Formant Synth
+        // POT 1 → F1 (200-1000 Hz, exponential)
+        float pot1 = hw.GetKnobValue(Bluemchen::CTRL_1);
+        float f1 = 200.0f * powf(5.0f, pot1);  // 200Hz to 1000Hz
+        float smoothedF1 = f1Smooth.Process(f1);
+        formant1.SetF1(smoothedF1);
+        formant2.SetF1(smoothedF1);  // Both voices use same F1/F2
+
+        // POT 2 → F2 (500-3000 Hz, exponential)
+        float pot2 = hw.GetKnobValue(Bluemchen::CTRL_2);
+        float f2 = 500.0f * powf(6.0f, pot2);  // 500Hz to 3000Hz
+        float smoothedF2 = f2Smooth.Process(f2);
+        formant1.SetF2(smoothedF2);
+        formant2.SetF2(smoothedF2);
+
+        // Note: Encoder rotation for vowel presets handled below
+        // CV 1/2 could be used for F3/F4 offsets in future enhancement
+    }
+
+    // Encoder rotation: Algorithm selection OR vowel preset (in formant mode)
     int encInc = hw.encoder.Increment();
     if (encInc != 0) {
-        currentAlgorithm += encInc;
-        if (currentAlgorithm < 0) currentAlgorithm = NUM_ALGORITHMS - 1;
-        if (currentAlgorithm >= NUM_ALGORITHMS) currentAlgorithm = 0;
-        osc1.SetAlgorithm(static_cast<DSFOscillator::Algorithm>(currentAlgorithm));
-        osc2.SetAlgorithm(static_cast<DSFOscillator::Algorithm>(currentAlgorithm));
+        if (currentAlgorithm == 5) {  // Formant Synth mode
+            // Rotate through vowel presets
+            currentVowel = (currentVowel + encInc + 5) % 5;
+            formant1.SetVowelPreset(static_cast<FormantSynth::VowelPreset>(currentVowel));
+            formant2.SetVowelPreset(static_cast<FormantSynth::VowelPreset>(currentVowel));
+        } else {
+            // Normal algorithm selection
+            currentAlgorithm += encInc;
+            if (currentAlgorithm < 0) currentAlgorithm = NUM_ALGORITHMS - 1;
+            if (currentAlgorithm >= NUM_ALGORITHMS) currentAlgorithm = 0;
+            osc1.SetAlgorithm(static_cast<DSFOscillator::Algorithm>(currentAlgorithm));
+            osc2.SetAlgorithm(static_cast<DSFOscillator::Algorithm>(currentAlgorithm));
+        }
     }
     
     // Encoder press: Short press = next output mode, Long press = toggle view
@@ -424,19 +509,57 @@ void UpdateDisplay() {
             hw.display.WriteString(buf, Font_6x8, true);
         }
 
+    } else if (currentAlgorithm == 5) {
+        // Formant Synth view
+        char buf[32];
+
+        // Algorithm name with output mode indicator
+        hw.display.SetCursor(0, 0);
+        hw.display.WriteString("Formant Synth", Font_6x8, true);
+        hw.display.SetCursor(110, 0);
+        switch(outputMode) {
+            case MONO_DUAL: hw.display.WriteString("M", Font_6x8, true); break;
+            case STEREO_DETUNE: hw.display.WriteString("S", Font_6x8, true); break;
+            case DUAL_INDEPENDENT: hw.display.WriteString("D", Font_6x8, true); break;
+            case MAIN_SUB: hw.display.WriteString("B", Font_6x8, true); break;
+            case MAIN_RING: hw.display.WriteString("R", Font_6x8, true); break;
+            case MAIN_PROCESSED: hw.display.WriteString("P", Font_6x8, true); break;
+        }
+
+        // Vowel name
+        const char* vowelNames[] = {"A (ah)", "E (eh)", "I (ee)", "O (oh)", "U (oo)"};
+        sprintf(buf, "Vowel: %s", vowelNames[currentVowel]);
+        hw.display.SetCursor(0, 12);
+        hw.display.WriteString(buf, Font_6x8, true);
+
+        // F1 and F2 frequencies
+        sprintf(buf, "F1:%.0f F2:%.0f", formant1.GetF1(), formant1.GetF2());
+        hw.display.SetCursor(0, 20);
+        hw.display.WriteString(buf, Font_6x8, true);
+
+        // Show excitation mode (MIDI vs external)
+        if (!formant1.IsUsingExternalInput()) {
+            sprintf(buf, "MIDI:%.0fHz", formant1.GetPitch());
+            hw.display.SetCursor(0, 28);
+            hw.display.WriteString(buf, Font_6x8, true);
+        } else {
+            hw.display.SetCursor(0, 28);
+            hw.display.WriteString("Ext Audio", Font_6x8, true);
+        }
+
     } else {
         // Normal view: Algorithm and parameters
-        
+
         // Algorithm name
         hw.display.SetCursor(0, 0);
         hw.display.WriteString(algorithmNames[currentAlgorithm], Font_6x8, true);
-        
+
         // Frequency
         char buf[32];
         sprintf(buf, "F:%.1fHz", osc1.GetFreq());
         hw.display.SetCursor(0, 12);
         hw.display.WriteString(buf, Font_6x8, true);
-        
+
         // Harmonics (show both if in dual independent mode)
         if (outputMode == DUAL_INDEPENDENT) {
             sprintf(buf, "H:%d/%d", osc1.GetNumHarmonics(), osc2.GetNumHarmonics());
@@ -445,7 +568,7 @@ void UpdateDisplay() {
         }
         hw.display.SetCursor(0, 20);
         hw.display.WriteString(buf, Font_6x8, true);
-        
+
         // Alpha or FM depth
         if (fmDepth > 0.1f) {
             sprintf(buf, "FM:%.2f", fmDepth);
@@ -454,7 +577,7 @@ void UpdateDisplay() {
         }
         hw.display.SetCursor(70, 20);
         hw.display.WriteString(buf, Font_6x8, true);
-        
+
         // Output mode indicator (small)
         hw.display.SetCursor(110, 0);
         switch(outputMode) {
@@ -488,16 +611,29 @@ int main(void) {
     osc2.SetAlpha(0.5f);
     osc2.SetAlgorithm(DSFOscillator::CLASSIC_DSF);
     
+    // Initialize formant synths
+    formant1.Init(sampleRate);
+    formant1.SetVowelPreset(FormantSynth::VOWEL_A);  // Default to 'A'
+
+    formant2.Init(sampleRate);
+    formant2.SetVowelPreset(FormantSynth::VOWEL_A);
+
     // Initialize smoothing filters
     freqSmooth.Init();
     freqSmooth.SetFrequency(10.0f); // 10Hz lowpass
-    
+
     alphaSmooth.Init();
     alphaSmooth.SetFrequency(5.0f); // 5Hz lowpass
-    
+
     fmDepthSmooth.Init();
     fmDepthSmooth.SetFrequency(20.0f); // 20Hz lowpass for FM
-    
+
+    f1Smooth.Init();
+    f1Smooth.SetFrequency(15.0f);  // 15Hz lowpass for formant F1
+
+    f2Smooth.Init();
+    f2Smooth.SetFrequency(15.0f);  // 15Hz lowpass for formant F2
+
     // Start audio
     hw.StartAudio(AudioCallback);
     

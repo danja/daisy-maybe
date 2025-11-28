@@ -17,7 +17,7 @@ Complete guide to operating the DSF Oscillator for kxmx_bluemchen.
 
 ## Overview
 
-The DSF Oscillator is a dual-oscillator Eurorack module implementing Discrete Summation Formula synthesis algorithms. It offers four synthesis algorithms, six output routing modes, MIDI control, through-zero frequency modulation, and extensive CV control.
+The DSF Oscillator is a dual-oscillator Eurorack module implementing Discrete Summation Formula synthesis algorithms. It offers six synthesis algorithms, six output routing modes, MIDI control, through-zero frequency modulation, and extensive CV control.
 
 ### Key Specifications
 
@@ -76,7 +76,7 @@ The DSF Oscillator is a dual-oscillator Eurorack module implementing Discrete Su
 | CV 2 | Alpha/FM Depth | 0.0-0.99 / 0-2x | Switches based on voltage |
 | Audio In 1 | TZ-FM Input | Audio rate | Through-zero modulation |
 | Audio In 2 | External Audio | Audio rate | For ring mod/processing |
-| Encoder Rotate | Algorithm Select | 4 algorithms | Cycles through options |
+| Encoder Rotate | Algorithm Select | 6 algorithms | Cycles through options |
 | Encoder Short Press | Output Mode | 6 modes | Cycles through routing |
 | Encoder Long Press | Display Toggle | 2 views | Hold >500ms |
 
@@ -216,6 +216,107 @@ The module implements four Discrete Summation Formula algorithms, each with uniq
 - Alpha parameter unused
 - Through-zero FM disabled
 - Output modes have no effect (always independent channels)
+
+### 6. Formant Synth
+
+**Character**: Vocal-like timbres with vowel morphing and speech synthesis
+
+**Implementation**: Four cascaded bandpass filters modeling vocal tract formants
+
+**Parameters**:
+- **POT 1**: F1 frequency (200-1000 Hz) - First formant, controls jaw position/vowel height
+- **POT 2**: F2 frequency (500-3000 Hz) - Second formant, controls tongue position/vowel backness
+- **Encoder Rotate**: Vowel preset selection (A → E → I → O → U)
+- **Audio In 1**: Excitation for voice 1 (default mode)
+- **Audio In 2**: Excitation for voice 2 (dual voice mode)
+- **MIDI Ch 1**: Enables internal excitation for voice 1 with pitch control
+- **MIDI Ch 2**: Enables internal excitation for voice 2 with pitch control
+
+**Signal Flow**:
+```
+Excitation Source → F1 Filter → F2 Filter → F3 Filter → F4 Filter → Output
+```
+
+**Vowel Presets**:
+| Vowel | Example | F1 (Hz) | F2 (Hz) | F3 (Hz) | F4 (Hz) |
+|-------|---------|---------|---------|---------|---------|
+| A     | "ah" (father) | 730  | 1090 | 2440 | 3200 |
+| E     | "eh" (bed)    | 530  | 1840 | 2480 | 3500 |
+| I     | "ee" (see)    | 270  | 2290 | 3010 | 3500 |
+| O     | "oh" (go)     | 570  | 840  | 2410 | 3200 |
+| U     | "oo" (food)   | 300  | 870  | 2240 | 3200 |
+
+**Excitation Modes**:
+
+*External Audio (Default)*:
+- Audio inputs directly excite the formant filters
+- Perfect for processing drums, synths, or noise sources
+- Both inputs processed independently for dual-voice operation
+- No MIDI = always external mode
+
+*Internal MIDI Excitation*:
+- MIDI Note On enables sawtooth oscillator + noise blend
+- Pitch tracks MIDI note frequency
+- Velocity controls output gain
+- Note Off returns to external audio mode
+- Ideal for playing formant filters like a melodic instrument
+
+**Sound**:
+- Authentic vowel sounds when excited with rich sources
+- Speech-like timbres with proper excitation
+- Robotic/vocoder effects with electronic sources
+- Formant filtering adds vocal character to any sound
+- Dual voices create thick, chorused vocal textures
+
+**Tips**:
+- **Best Excitation Sources**: Sawtooth waves, noise, pulse trains, or percussive sounds
+- **Vowel Morphing**: Slowly sweep POT1 and POT2 for smooth vowel transitions
+- **Preset Jumping**: Rotate encoder for instant vowel changes (great for rhythmic effects)
+- **Dual Vowels**: Use stereo detune mode with different audio inputs for two simultaneous vowels
+- **MIDI Mode**: Send MIDI notes to "play" the vocal filter like a keyboard instrument
+- **Drums Through Formants**: Patch kicks/snares into inputs for vocal-textured percussion
+- **Self-Excitation**: Use MIDI mode for internal excitation when no external source available
+
+**Vowel Space Control**:
+- F1 (POT 1) moves vertically in vowel space (open/close jaw)
+- F2 (POT 2) moves horizontally (front/back tongue position)
+- Together they create a 2D "vowel space" for expressive control
+- Presets provide anchor points for common vowels
+
+**Control Mapping in Formant Mode**:
+- POT 1 controls F1 only (harmonics control disabled)
+- POT 2 controls F2 only (harmonics control disabled)
+- Encoder rotation cycles through vowel presets (NOT algorithms)
+- Encoder short press still changes output modes
+- CV inputs could be used for F3/F4 offsets (future enhancement)
+- Through-zero FM disabled in this mode
+- Alpha parameter unused
+
+**Performance Techniques**:
+
+*Vowel Sequencing*:
+```
+Setup: MIDI sequencer sending notes
+POT 1/2: Set to mid-range
+Encoder: Rotate through vowels in rhythm
+Result: Sequenced melodic lines with changing vowel articulation
+```
+
+*Formant Sweep*:
+```
+Setup: External audio source (drum loop, synth)
+POT 1: Slow manual sweep from low to high
+POT 2: Complementary movement
+Result: Smooth "talking" effect over audio source
+```
+
+*Dual Vowel Harmony*:
+```
+Setup: Stereo Detune output mode
+MIDI Ch 1 & 2: Different notes
+Encoder: Select vowel preset
+Result: Two-part vocal harmony
+```
 
 ## Output Modes
 
@@ -530,6 +631,33 @@ Knob 2: 5-10 harmonics
 CV 2: Alpha = 0.7
 ```
 
+**Talking Drum**:
+```
+Algorithm: Formant Synth
+Audio In 1: Kick or snare drum
+POT 1: F1 = mid-range (500 Hz)
+POT 2: F2 = sweep slowly
+Result: Drum that "talks" through vowel movements
+```
+
+**Robotic Voice**:
+```
+Algorithm: Formant Synth
+MIDI: Play melody on Channel 1
+Encoder: Rotate through vowels rhythmically
+POT 1/2: Fine-tune vowel character
+Result: Melodic robot/vocoder speech
+```
+
+**Dual Vowel Pad**:
+```
+Algorithm: Formant Synth
+Output Mode: Stereo Detune
+Audio In 1 & 2: Different noise sources
+Encoder: Set vowel preset (try I or U)
+Result: Wide stereo vocal pad texture
+```
+
 ## Display Guide
 
 ### Normal Display Format
@@ -571,6 +699,34 @@ Or if no MIDI:
 │              │
 └──────────────┘
 ```
+
+### Formant Synth Display
+
+**Normal View**:
+```
+┌──────────────┐
+│Formant Synth S│  ← Algorithm + Mode indicator
+│Vowel: A (ah) │  ← Current vowel preset
+│F1:730 F2:1090│  ← Formant frequencies (Hz)
+│Ext Audio     │  ← Excitation mode
+└──────────────┘
+```
+
+Or with MIDI active:
+```
+┌──────────────┐
+│Formant Synth S│
+│Vowel: E (eh) │
+│F1:530 F2:1840│
+│MIDI:220Hz    │  ← MIDI pitch being tracked
+└──────────────┘
+```
+
+**Special Notes for Formant Mode**:
+- Encoder rotation changes vowel presets (NOT algorithms)
+- F1/F2 frequencies update in real-time with pot movements
+- "Ext Audio" shows when using audio inputs
+- "MIDI:XXXHz" shows when internal excitation is active
 
 ## Tips & Tricks
 
@@ -655,6 +811,8 @@ Use envelope into Audio In 1 with high FM depth for dramatic pitch drops.
 - Modified FM: DSF with phase modulation
 - Waveshape: DSF + cubic soft-clipping
 - Complex DSF: Dual-term summation
+- Resonator Delay: Dual pitch-tracked delays (1-250ms)
+- Formant Synth: 4-formant cascaded bandpass filter synthesis
 
 ---
 
