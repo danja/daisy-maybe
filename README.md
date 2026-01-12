@@ -78,12 +78,11 @@ A Discrete Summation Formula (DSF) synthesizer for the kxmx_bluemchen Eurorack m
 
 ### Required Libraries
 
-Clone these repositories in a parent directory:
+Clone these repositories as siblings to this project:
 
 ```bash
-# Create workspace
-mkdir ~/bluemchen-workspace
-cd ~/bluemchen-workspace
+# Navigate to your projects directory
+cd ~/github  # or wherever you keep your projects
 
 # Clone required libraries
 git clone --recursive https://github.com/electro-smith/libDaisy.git
@@ -91,40 +90,53 @@ git clone --recursive https://github.com/electro-smith/DaisySP.git
 git clone --recursive https://github.com/recursinging/kxmx_bluemchen.git
 
 # Clone this project
-git clone <this-repo-url> bluemchen-dsf
+git clone https://github.com/danja/daisy-maybe.git
 ```
 
 Your directory structure should look like:
 ```
-bluemchen-workspace/
+github/  (or your projects directory)
 ├── libDaisy/
 ├── DaisySP/
 ├── kxmx_bluemchen/
-└── bluemchen-dsf/
-    ├── main.cpp
-    ├── dsf_oscillator.h
-    ├── Makefile
-    └── README.md
+└── daisy-maybe/
+    └── daisy-dsf/
+        ├── main.cpp
+        ├── dsf_oscillator.h
+        ├── formant_synth.h
+        ├── Makefile
+        └── README.md
 ```
+
+**Note**: The Makefile expects libDaisy, DaisySP, and kxmx_bluemchen to be two directories up from daisy-dsf/ (i.e., siblings of daisy-maybe/).
 
 ## Building
 
 1. **Build libDaisy and DaisySP** (first time only):
    ```bash
-   cd ~/bluemchen-workspace/libDaisy
+   cd ~/github/libDaisy  # adjust path to your setup
    make
-   
-   cd ~/bluemchen-workspace/DaisySP
+
+   cd ~/github/DaisySP
    make
    ```
 
 2. **Build this project:**
    ```bash
-   cd ~/bluemchen-workspace/bluemchen-dsf
+   cd ~/github/daisy-maybe/daisy-dsf
    make
    ```
 
-   This will create `build/bluemchen-dsf.bin`
+   Or use the build helper script:
+   ```bash
+   cd ~/github/daisy-maybe/daisy-dsf
+   ./build.sh          # Build only
+   ./build.sh clean    # Clean build artifacts
+   ./build.sh flash    # Build and flash to hardware
+   ./build.sh all      # Clean, build, and flash
+   ```
+
+   This will create `build/daisy-dsf.bin`
 
 ## Flashing to Hardware
 
@@ -144,8 +156,14 @@ bluemchen-workspace/
 1. Build the project: `make`
 2. Go to https://electro-smith.github.io/Programmer/
 3. Connect your Daisy Seed in DFU mode (see steps above)
-4. Click "Choose File" and select `build/bluemchen-dsf.bin`
+4. Click "Choose File" and select `build/daisy-dsf.bin`
 5. Click "Program"
+
+## Debugging
+
+For detailed debugging instructions with ST-Link, see [docs/debugging.md](docs/debugging.md).
+
+**Quick start**: Connect your ST-Link to the Daisy Seed, then press **F5** in VS Code to start debugging.
 
 ## Usage
 
@@ -331,6 +349,15 @@ This formula generates N harmonics with amplitude rolloff controlled by α, with
 - Noise Engineering Loquelic Iteritas (commercial implementation)
 
 ## Development
+
+### Debugging
+
+See [docs/debugging.md](docs/debugging.md) for complete debugging instructions with ST-Link and OpenOCD.
+
+The project includes VS Code debug configurations in `daisy-dsf/.vscode/` for:
+- Debugging with ST-Link adapter
+- Building and flashing from VS Code
+- Peripheral register inspection (SVD file included)
 
 ### Modifying Algorithms
 
