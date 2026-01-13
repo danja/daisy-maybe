@@ -180,6 +180,10 @@ void AudioCallback(AudioHandle::InputBuffer in,
             calibPhase = disyn::StepPhase(calibPhase, currentFreq, globalSampleRate);
             sig1 = std::sin(calibPhase * disyn::kTwoPi) * 0.5f;
             sig2 = sig1;
+
+            out[0][i] = sig1;
+            out[1][i] = sig2;
+            continue;
         }
         else
         {
@@ -286,7 +290,7 @@ void UpdateControls()
         const float cvMultiplier = powf(2.0f, cv1 * 5.0f * pitchScale);
         const float midiFreq = midiCh1.active ? MidiNoteToFrequency(midiCh1.note) : baseFreq;
         targetFreq = midiFreq * cvMultiplier * powf(2.0f, pitchOffset);
-        param1 = std::clamp(pot2 + (cv2 - 0.5f), 0.0f, 1.0f);
+        param1 = std::clamp(pot2 + cv2 * 0.5f, 0.0f, 1.0f);
     }
 
     const float smoothedFreq = freqSmooth.Process(targetFreq);
