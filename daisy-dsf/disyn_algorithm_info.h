@@ -38,6 +38,7 @@ constexpr AlgorithmInfo kAlgorithmInfoList[] = {
     {"N3 XMod", {"M1", 0.0f, 1.0f, false}, {"M2", 0.0f, 1.0f, false}, {"Mix", 0.0f, 1.0f, false}},
     {"N4 Tay", {"T1", 1.0f, 10.0f, true}, {"T2", 1.0f, 10.0f, true}, {"Blend", 0.0f, 1.0f, false}},
     {"Traj", {"Sides", 3.0f, 12.0f, true}, {"Ang", 0.0f, 360.0f, false}, {"Jit", 0.0f, 10.0f, false}},
+    {"Calib", {"Scale", 0.8f, 1.2f, false}, {"Offset", -1.0f, 1.0f, false}, {"Unused", 0.0f, 1.0f, false}},
 };
 
 constexpr size_t kAlgorithmCount = sizeof(kAlgorithmInfoList) / sizeof(kAlgorithmInfoList[0]);

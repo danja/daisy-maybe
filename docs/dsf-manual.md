@@ -4,13 +4,13 @@ Guide to operating the Disyn algorithm oscillator firmware for kxmx_bluemchen.
 
 ## Overview
 
-This firmware replaces the original DSF algorithm set with the Disyn algorithm collection from the disyn-esp32 project. It provides 19 algorithms with consistent parameter mapping, two CV inputs tied to pitch and the primary algorithm parameter, and a simplified menu system for secondary parameters and output routing.
+This firmware replaces the original DSF algorithm set with the Disyn algorithm collection from the disyn-esp32 project. It provides 19 synthesis algorithms plus a calibration slot, consistent parameter mapping, two CV inputs tied to pitch and the primary algorithm parameter, and a simplified menu system for secondary parameters and output routing.
 
 ### Key Specifications
 
 - **Audio Rate**: 48 kHz
 - **Frequency Range**: 55 Hz - 7040 Hz (7 octaves)
-- **Algorithms**: 19 Disyn oscillator algorithms
+- **Algorithms**: 19 Disyn oscillator algorithms + calibration slot
 - **CV Inputs**: 2x 0-5V (12-bit ADC)
 - **Audio Inputs**: Not used in this firmware
 - **Audio Outputs**: 2x Eurorack level
@@ -66,20 +66,39 @@ This firmware replaces the original DSF algorithm set with the Disyn algorithm c
 
 ## Menu System
 
-The encoder controls a simple four-page menu:
+The encoder controls a simple five-page menu. The current page is shown on the top line as **ALG**, **P2**, **P3**, **OUT**, or **IN**.
 
-- **ALG**: Select algorithm (encoder rotates through the 19 algorithms).
+- **ALG**: Select algorithm (encoder rotates through the 19 algorithms + calibration).
 - **P2**: Adjust Param 2 (secondary algorithm parameter).
 - **P3**: Adjust Param 3 (tertiary algorithm parameter).
 - **OUT**: Select output mode.
+- **IN**: Select how the two audio inputs are used (see below).
 
-Knob 1, Knob 2, and both CV inputs are always active regardless of page.
+Knob 1, Knob 2, and both CV inputs are always active regardless of page (except in Calibration, where the knobs are repurposed).
 
 ## Output Modes
 
 - **Mono (M)**: Primary output on both channels.
 - **Stereo (S)**: Primary on OUT 1, secondary on OUT 2.
 - **Detune (D)**: Second oscillator detuned slightly on OUT 2.
+
+## Audio Input Modes
+
+The audio inputs are always active in **Trajectory** (polygon driver). For other algorithms you can pick one of three modes in the **IN** menu page.
+
+- **Reactor**: IN1 and IN2 modulate Param 2 and Param 3 at audio rate for chaotic timbre movement.
+- **CrossMod**: IN1 FM-modulates pitch, IN2 crossfades between primary/secondary outputs.
+- **Exciter**: IN1 and IN2 are mixed into the outputs to “re-excite” the algorithm.
+
+## Calibration Slot
+
+The last algorithm slot is **Calib**. It behaves like an algorithm entry but is used to set pitch scale and offset. Values are saved to flash automatically after you stop moving the knobs for about a second.
+
+- **Knob 1**: Pitch scale (0.8 - 1.2)
+- **Knob 2**: Pitch offset (-1 to +1 octave)
+- **CV 1**: Still active to verify V/Oct tracking
+
+While in Calib, a sine tone is output to both channels so you can tune by ear or with a tuner.
 
 ## Algorithm List
 
@@ -138,10 +157,10 @@ MIDI pitch replaces Knob 1 base frequency while active, and CV 1 still applies a
 
 ## Display Guide
 
-- **Line 1**: Algorithm name with a leading `>` when the encoder is on ALG page. Output mode letter (M/S/D) on the right.
+- **Top line**: Algorithm name with `>` when the encoder is on ALG page. Page label (ALG/P2/P3/OUT) and output mode letter (M/S/D) are on the right.
 - **Line 2**: Frequency in Hz.
-- **Line 3**: Param 1 label and value.
-- **Line 4**: Param 2, Param 3, or Output depending on the current page. `>` marks the encoder target.
+- **Line 3**: Param 1 label and value (or Scale in Calib).
+- **Line 4**: Param 2, Param 3, or Output depending on the current page (or Offset in Calib).
 
 ## Tips
 
