@@ -57,8 +57,8 @@ This firmware turns the module into a pair of tuned delay-line resonators. Each 
 |---------|----------|-------|-------|
 | Knob 1 | Base pitch | ~20 Hz - 2 kHz | Exponential mapping |
 | CV 1 | V/Oct pitch | 5 octaves | Applies to both resonators |
-| Knob 2 | Resonator 2 offset | -2 to +2 octaves | Added on top of resonator 1 |
-| CV 2 | Resonator 2 offset mod | -2 to +2 octaves | Adds to Knob 2 |
+| Knob 2 | Resonator 2 offset | -1 to +1 octave | Added on top of resonator 1 |
+| CV 2 | Resonator 2 offset mod | 0 to +1 octave | Adds to Knob 2 |
 | Encoder rotate | Menu value | Depends on page | See menu below |
 | Encoder short press | Page select | CAL → FB → X12 → X21 → INP → DAMP → MIX | Cycles pages |
 | Encoder long press | Overlay | On/Off | Shows cross-feedback values |
@@ -95,7 +95,7 @@ Tip: use high FB with low cross values for stable resonant tones; push X12/X21 f
 
 INP controls where the input signal is injected inside each delay line, from the input tap to deeper inside the buffer.
 
-- Low values = traditional input at the head (more predictable)
+- Low values = traditional input at the head (more predictable). At 0, input is mixed directly into the delay write.
 - Higher values = darker, more complex resonances
 
 ## Damping (DAMP)

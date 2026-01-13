@@ -119,6 +119,10 @@ PersistentStorage<CalibSettings> *calibStorage = nullptr;
 
 float calibPhase = 0.0f;
 float sampleRate = 48000.0f;
+bool heartbeatOn = false;
+uint32_t lastHeartbeatMs = 0;
+bool ledOn = false;
+uint32_t lastLedMs = 0;
 
 enum MenuPage
 {
@@ -152,6 +156,12 @@ float MapExpo(float value, float minVal, float maxVal)
     return minVal * powf(maxVal / minVal, value);
 }
 
+float SoftClipSample(float x)
+{
+    const float absx = fabsf(x);
+    return x / (1.0f + absx);
+}
+
 void UpdateFeedbackFilters()
 {
     const float minCut = 200.0f;
@@ -161,7 +171,7 @@ void UpdateFeedbackFilters()
     fbFilter2.SetFrequency(cutoff);
 }
 
-void UpdateControls()
+void UpdateControlsFast()
 {
     hw.ProcessAllControls();
 
@@ -182,14 +192,6 @@ void UpdateControls()
             lastCalibChangeMs = now;
         }
 
-        if (calibDirty && (now - lastCalibChangeMs) > 1000 && calibStorage)
-        {
-            calibStorage->GetSettings().scale = pitchScale;
-            calibStorage->GetSettings().offset = pitchOffset;
-            calibStorage->Save();
-            savedCalib = calibStorage->GetSettings();
-            calibDirty = false;
-        }
     }
     else
     {
@@ -235,12 +237,10 @@ void UpdateControls()
     if (hw.encoder.RisingEdge())
     {
         encoderPressTime = System::GetNow();
-        encoderLongPress = false;
     }
-
     if (hw.encoder.FallingEdge())
     {
-        uint32_t pressDuration = System::GetNow() - encoderPressTime;
+        const uint32_t pressDuration = System::GetNow() - encoderPressTime;
         if (pressDuration > 500)
         {
             encoderLongPress = !encoderLongPress;
@@ -253,15 +253,25 @@ void UpdateControls()
 
     if (lastMenuPage != menuPage)
     {
-        if (lastMenuPage == PAGE_CALIB && calibDirty && calibStorage)
-        {
-            calibStorage->GetSettings().scale = pitchScale;
-            calibStorage->GetSettings().offset = pitchOffset;
-            calibStorage->Save();
-            savedCalib = calibStorage->GetSettings();
-            calibDirty = false;
-        }
         lastMenuPage = menuPage;
+    }
+}
+
+void HandleCalibrationSave()
+{
+    if (!calibDirty || !calibStorage)
+    {
+        return;
+    }
+
+    const uint32_t now = System::GetNow();
+    if ((now - lastCalibChangeMs) > 1000 || lastMenuPage != menuPage)
+    {
+        calibStorage->GetSettings().scale = pitchScale;
+        calibStorage->GetSettings().offset = pitchOffset;
+        calibStorage->Save();
+        savedCalib = calibStorage->GetSettings();
+        calibDirty = false;
     }
 }
 
@@ -275,8 +285,10 @@ void UpdateDisplay()
     snprintf(buf, sizeof(buf), "Resonators");
     hw.display.WriteString(buf, Font_6x8, true);
 
-    hw.display.SetCursor(96, 0);
+    hw.display.SetCursor(90, 0);
     hw.display.WriteString(menuNames[menuPage], Font_6x8, true);
+    hw.display.SetCursor(120, 0);
+    hw.display.WriteChar(heartbeatOn ? '.' : ' ', Font_6x8, true);
 
     if (menuPage == PAGE_CALIB)
     {
@@ -345,9 +357,26 @@ void AudioCallback(AudioHandle::InputBuffer in,
                    AudioHandle::OutputBuffer out,
                    size_t size)
 {
+    UpdateControlsFast();
+
+    const bool isCalib = (menuPage == PAGE_CALIB);
+    const float localMix = mix;
+    const float localFeedback = feedback;
+    const float localCross12 = cross12;
+    const float localCross21 = cross21;
+    const float localInputPos = inputPos;
+    const float dryMix = 1.0f - localMix;
+    const float wetMix = localMix;
+
+    const float delaySamples1 = sampleRate / std::max(currentFreq, 1.0f);
+    const float delaySamples2 = sampleRate / std::max(currentFreq2, 1.0f);
+
+    delay1.SetDelay(delaySamples1);
+    delay2.SetDelay(delaySamples2);
+
     for (size_t i = 0; i < size; i++)
     {
-        if (menuPage == PAGE_CALIB)
+        if (isCalib)
         {
             calibPhase = calibPhase + kCalibTone / sampleRate;
             if (calibPhase >= 1.0f)
@@ -358,36 +387,30 @@ void AudioCallback(AudioHandle::InputBuffer in,
             continue;
         }
 
-        const float in1 = in[0][i];
-        const float in2 = in[1][i];
-
-        const float delaySamples1 = sampleRate / std::max(currentFreq, 1.0f);
-        const float delaySamples2 = sampleRate / std::max(currentFreq2, 1.0f);
-
-        delay1.SetDelay(delaySamples1);
-        delay2.SetDelay(delaySamples2);
+        const float in1 = SoftClipSample(in[0][i]);
+        const float in2 = SoftClipSample(in[1][i]);
 
         const float y1 = delay1.Read();
         const float y2 = delay2.Read();
 
-        float fb1 = y1 * feedback + y2 * cross21;
-        float fb2 = y2 * feedback + y1 * cross12;
+        float fb1 = y1 * localFeedback + y2 * localCross21;
+        float fb2 = y2 * localFeedback + y1 * localCross12;
 
         fb1 = fbFilter1.Process(fb1);
         fb2 = fbFilter2.Process(fb2);
 
-        float write1 = fb1;
-        float write2 = fb2;
+        float write1 = SoftClipSample(fb1);
+        float write2 = SoftClipSample(fb2);
 
-        if (inputPos <= 0.001f)
+        if (localInputPos <= 0.001f)
         {
-            write1 += in1;
-            write2 += in2;
+            write1 = SoftClipSample(write1 + in1);
+            write2 = SoftClipSample(write2 + in2);
         }
         else
         {
-            delay1.AddAt(delaySamples1 * inputPos, in1);
-            delay2.AddAt(delaySamples2 * inputPos, in2);
+            delay1.AddAt(delaySamples1 * localInputPos, in1);
+            delay2.AddAt(delaySamples2 * localInputPos, in2);
         }
 
         delay1.Write(write1);
@@ -395,8 +418,6 @@ void AudioCallback(AudioHandle::InputBuffer in,
 
         const float wet1 = y1;
         const float wet2 = y2;
-        const float dryMix = 1.0f - mix;
-        const float wetMix = mix;
 
         out[0][i] = dryMix * in1 + wetMix * wet1;
         out[1][i] = dryMix * in2 + wetMix * wet2;
@@ -417,6 +438,13 @@ int main(void)
     fbFilter2.Init();
     UpdateFeedbackFilters();
 
+    hw.display.Fill(false);
+    hw.display.SetCursor(0, 0);
+    hw.display.WriteString("Resonators", Font_6x8, true);
+    hw.display.SetCursor(0, 12);
+    hw.display.WriteString("Booting...", Font_6x8, true);
+    hw.display.Update();
+
     CalibSettings defaults{1.0f, 0.0f};
     static PersistentStorage<CalibSettings> storage(hw.seed.qspi);
     storage.Init(defaults);
@@ -430,9 +458,20 @@ int main(void)
     uint32_t lastDisplayUpdate = 0;
     while (1)
     {
-        UpdateControls();
+        HandleCalibrationSave();
 
         const uint32_t now = System::GetNow();
+        if (now - lastHeartbeatMs > 250)
+        {
+            heartbeatOn = !heartbeatOn;
+            lastHeartbeatMs = now;
+        }
+        if (now - lastLedMs > 250)
+        {
+            ledOn = !ledOn;
+            hw.seed.SetLed(ledOn);
+            lastLedMs = now;
+        }
         if (now - lastDisplayUpdate > 33)
         {
             UpdateDisplay();
