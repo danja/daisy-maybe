@@ -1,14 +1,16 @@
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
 
 #include "daisy_seed.h"
-#include "daisysp.h"
 #include "kxmx_bluemchen.h"
 #include "util/PersistentStorage.h"
 
+#include "delay_lines.h"
+#include "display.h"
+#include "encoder_handler.h"
+#include "filters.h"
+
 using namespace daisy;
-using namespace daisysp;
 using namespace kxmx;
 
 namespace
@@ -17,86 +19,29 @@ namespace
 #define M_PI 3.14159265358979323846f
 #endif
 
-constexpr float kMinFreq = 20.0f;
-constexpr float kMaxFreq = 2000.0f;
-constexpr float kMaxFeedback = 0.99f;
-constexpr float kMaxCross = 0.95f;
-constexpr float kCalibTone = 440.0f;
-constexpr float kTwoPi = 2.0f * static_cast<float>(M_PI);
-constexpr size_t kMaxDelaySamples = 48000;
+    constexpr float kMinFreq = 20.0f;
+    constexpr float kMaxFreq = 2000.0f;
+    constexpr float kMaxFeedback = 0.999f;
+    constexpr float kMaxCross = 0.99f;
+    constexpr float kCalibTone = 440.0f;
+    constexpr float kTwoPi = 2.0f * static_cast<float>(M_PI);
 
-struct CalibSettings
-{
-    float scale;
-    float offset;
-
-    bool operator!=(const CalibSettings &rhs) const
+    struct CalibSettings
     {
-        return scale != rhs.scale || offset != rhs.offset;
-    }
-};
+        float scale;
+        float offset;
 
-template <size_t max_size>
-class DelayBuffer
-{
-  public:
-    void Init()
-    {
-        Reset();
-    }
-
-    void Reset()
-    {
-        for(size_t i = 0; i < max_size; ++i)
+        bool operator!=(const CalibSettings &rhs) const
         {
-            line_[i] = 0.0f;
+            return scale != rhs.scale || offset != rhs.offset;
         }
-        write_ptr_ = 0;
-    }
-
-    void SetDelay(float delay)
-    {
-        delay_ = std::clamp(delay, 1.0f, static_cast<float>(max_size - 2));
-    }
-
-    float Read() const
-    {
-        const int32_t delay_integral = static_cast<int32_t>(delay_);
-        const float   delay_fractional = delay_ - static_cast<float>(delay_integral);
-        const float a = line_[(write_ptr_ + delay_integral) % max_size];
-        const float b = line_[(write_ptr_ + delay_integral + 1) % max_size];
-        return a + (b - a) * delay_fractional;
-    }
-
-    void Write(float sample)
-    {
-        line_[write_ptr_] = sample;
-        write_ptr_ = (write_ptr_ - 1 + max_size) % max_size;
-    }
-
-    void AddAt(float delay, float sample)
-    {
-        const float clamped = std::clamp(delay, 0.0f, static_cast<float>(max_size - 2));
-        const int32_t delay_integral = static_cast<int32_t>(clamped);
-        const float delay_fractional = clamped - static_cast<float>(delay_integral);
-        const size_t idx = (write_ptr_ + delay_integral) % max_size;
-        const size_t idx2 = (idx + 1) % max_size;
-        line_[idx] += sample * (1.0f - delay_fractional);
-        line_[idx2] += sample * delay_fractional;
-    }
-
-  private:
-    float  line_[max_size];
-    size_t write_ptr_ = 0;
-    float  delay_ = 1.0f;
-};
+    };
 } // namespace
 
 Bluemchen hw;
-DelayBuffer<kMaxDelaySamples> delay1;
-DelayBuffer<kMaxDelaySamples> delay2;
-OnePole fbFilter1;
-OnePole fbFilter2;
+DelayLinePair delays;
+FeedbackFilters feedbackFilters;
+EncoderState encoderState;
 
 float currentFreq = 440.0f;
 float currentFreq2 = 440.0f;
@@ -110,10 +55,10 @@ float damp = 0.0f;
 float mix = 1.0f;
 
 bool encoderLongPress = false;
-uint32_t encoderPressTime = 0;
 
 uint32_t lastCalibChangeMs = 0;
 bool calibDirty = false;
+bool calibSavePending = false;
 CalibSettings savedCalib = {1.0f, 0.0f};
 PersistentStorage<CalibSettings> *calibStorage = nullptr;
 
@@ -123,6 +68,11 @@ bool heartbeatOn = false;
 uint32_t lastHeartbeatMs = 0;
 bool ledOn = false;
 uint32_t lastLedMs = 0;
+int lastEncInc = 0;
+uint32_t lastEncIncMs = 0;
+int encSteps = 0;
+bool encPressed = false;
+float encHeldMs = 0.0f;
 
 enum MenuPage
 {
@@ -135,8 +85,8 @@ enum MenuPage
     PAGE_MIX,
 };
 
-MenuPage menuPage = PAGE_FEEDBACK;
-MenuPage lastMenuPage = PAGE_FEEDBACK;
+int menuPageIndex = PAGE_FEEDBACK;
+int lastMenuPageIndex = PAGE_FEEDBACK;
 
 const char *menuNames[] = {
     "CAL",
@@ -156,34 +106,20 @@ float MapExpo(float value, float minVal, float maxVal)
     return minVal * powf(maxVal / minVal, value);
 }
 
-float SoftClipSample(float x)
-{
-    const float absx = fabsf(x);
-    return x / (1.0f + absx);
-}
-
-void UpdateFeedbackFilters()
-{
-    const float minCut = 200.0f;
-    const float maxCut = 8000.0f;
-    const float cutoff = minCut + (1.0f - damp) * (maxCut - minCut);
-    fbFilter1.SetFrequency(cutoff);
-    fbFilter2.SetFrequency(cutoff);
-}
-
 void UpdateControlsFast()
 {
-    hw.ProcessAllControls();
+    hw.ProcessAnalogControls();
+    hw.ProcessDigitalControls();
 
     const float pot1 = hw.GetKnobValue(Bluemchen::CTRL_1);
     const float pot2 = hw.GetKnobValue(Bluemchen::CTRL_2);
     const float cv1 = hw.GetKnobValue(Bluemchen::CTRL_3);
     const float cv2 = hw.GetKnobValue(Bluemchen::CTRL_4);
 
-    if (menuPage == PAGE_CALIB)
+    if (menuPageIndex == PAGE_CALIB)
     {
         pitchScale = 0.8f + pot1 * 0.4f;
-        pitchOffset = (pot2 - 0.5f) * 2.0f; // +/- 1 octave
+        pitchOffset = (pot2 - 0.5f) * 2.0f;
 
         const uint32_t now = System::GetNow();
         if (fabsf(pitchScale - savedCalib.scale) > 0.0005f || fabsf(pitchOffset - savedCalib.offset) > 0.005f)
@@ -191,7 +127,6 @@ void UpdateControlsFast()
             calibDirty = true;
             lastCalibChangeMs = now;
         }
-
     }
     else
     {
@@ -208,7 +143,15 @@ void UpdateControlsFast()
     int encInc = hw.encoder.Increment();
     if (encInc != 0)
     {
-        switch (menuPage)
+        lastEncInc = encInc;
+        lastEncIncMs = System::GetNow();
+        encSteps += encInc;
+    }
+    encPressed = hw.encoder.Pressed();
+    encHeldMs = hw.encoder.TimeHeldMs();
+    if (encInc != 0)
+    {
+        switch (static_cast<MenuPage>(menuPageIndex))
         {
         case PAGE_FEEDBACK:
             feedback = std::clamp(feedback + encInc * 0.02f, 0.0f, kMaxFeedback);
@@ -224,7 +167,7 @@ void UpdateControlsFast()
             break;
         case PAGE_DAMP:
             damp = std::clamp(damp + encInc * 0.02f, 0.0f, 1.0f);
-            UpdateFeedbackFilters();
+            feedbackFilters.SetDamp(damp);
             break;
         case PAGE_MIX:
             mix = std::clamp(mix + encInc * 0.02f, 0.0f, 1.0f);
@@ -234,123 +177,72 @@ void UpdateControlsFast()
         }
     }
 
-    if (hw.encoder.RisingEdge())
+    const int prevPage = menuPageIndex;
+    UpdateEncoder(hw, encoderState, kNumPages, menuPageIndex, encoderLongPress);
+    if (prevPage != menuPageIndex)
     {
-        encoderPressTime = System::GetNow();
-    }
-    if (hw.encoder.FallingEdge())
-    {
-        const uint32_t pressDuration = System::GetNow() - encoderPressTime;
-        if (pressDuration > 500)
+        if (prevPage == PAGE_CALIB)
         {
-            encoderLongPress = !encoderLongPress;
+            calibSavePending = true;
         }
-        else
-        {
-            menuPage = static_cast<MenuPage>((menuPage + 1) % kNumPages);
-        }
-    }
-
-    if (lastMenuPage != menuPage)
-    {
-        lastMenuPage = menuPage;
+        lastMenuPageIndex = menuPageIndex;
     }
 }
 
 void HandleCalibrationSave()
 {
-    if (!calibDirty || !calibStorage)
+    if (!calibStorage)
     {
         return;
     }
 
     const uint32_t now = System::GetNow();
-    if ((now - lastCalibChangeMs) > 1000 || lastMenuPage != menuPage)
+    if (calibDirty && (now - lastCalibChangeMs) > 1000)
+    {
+        calibSavePending = true;
+    }
+
+    if (calibSavePending)
     {
         calibStorage->GetSettings().scale = pitchScale;
         calibStorage->GetSettings().offset = pitchOffset;
         calibStorage->Save();
         savedCalib = calibStorage->GetSettings();
         calibDirty = false;
+        calibSavePending = false;
     }
 }
 
-void UpdateDisplay()
+DisplayData BuildDisplayData()
 {
-    hw.display.Fill(false);
-
-    char buf[32];
-
-    hw.display.SetCursor(0, 0);
-    snprintf(buf, sizeof(buf), "Resonators");
-    hw.display.WriteString(buf, Font_6x8, true);
-
-    hw.display.SetCursor(90, 0);
-    hw.display.WriteString(menuNames[menuPage], Font_6x8, true);
-    hw.display.SetCursor(120, 0);
-    hw.display.WriteChar(heartbeatOn ? '.' : ' ', Font_6x8, true);
-
-    if (menuPage == PAGE_CALIB)
+    DisplayData data;
+    data.isCalib = (menuPageIndex == PAGE_CALIB);
+    data.pitchScale = pitchScale;
+    data.pitchOffset = pitchOffset;
+    data.currentFreq = currentFreq;
+    data.currentFreq2 = currentFreq2;
+    data.feedback = feedback;
+    data.damp = damp;
+    data.cross12 = cross12;
+    data.cross21 = cross21;
+    data.inputPos = inputPos;
+    data.mix = mix;
+    data.menuLabel = menuNames[menuPageIndex];
+    data.encoderLongPress = encoderLongPress;
+    data.heartbeatOn = heartbeatOn;
+    data.menuIndex = menuPageIndex;
+    if (System::GetNow() - lastEncIncMs > 250)
     {
-        snprintf(buf, sizeof(buf), "Scale:%.3f", pitchScale);
-        hw.display.SetCursor(0, 12);
-        hw.display.WriteString(buf, Font_6x8, true);
-
-        snprintf(buf, sizeof(buf), "Offset:%+.2fo", pitchOffset);
-        hw.display.SetCursor(0, 20);
-        hw.display.WriteString(buf, Font_6x8, true);
-
-        snprintf(buf, sizeof(buf), "Tone:%.1f", kCalibTone);
-        hw.display.SetCursor(0, 28);
-        hw.display.WriteString(buf, Font_6x8, true);
+        data.encoderInc = 0;
     }
     else
     {
-        snprintf(buf, sizeof(buf), "F1:%.1f F2:%.1f", currentFreq, currentFreq2);
-        hw.display.SetCursor(0, 12);
-        hw.display.WriteString(buf, Font_6x8, true);
-
-        snprintf(buf, sizeof(buf), "FB:%.2f D:%.2f", feedback, damp);
-        hw.display.SetCursor(0, 20);
-        hw.display.WriteString(buf, Font_6x8, true);
-
-        switch (menuPage)
-        {
-        case PAGE_FEEDBACK:
-            snprintf(buf, sizeof(buf), ">FB:%.2f", feedback);
-            break;
-        case PAGE_CROSS12:
-            snprintf(buf, sizeof(buf), ">X12:%.2f", cross12);
-            break;
-        case PAGE_CROSS21:
-            snprintf(buf, sizeof(buf), ">X21:%.2f", cross21);
-            break;
-        case PAGE_INPUT_POS:
-            snprintf(buf, sizeof(buf), ">InP:%.2f", inputPos);
-            break;
-        case PAGE_DAMP:
-            snprintf(buf, sizeof(buf), ">Damp:%.2f", damp);
-            break;
-        case PAGE_MIX:
-            snprintf(buf, sizeof(buf), ">Mix:%.2f", mix);
-            break;
-        default:
-            snprintf(buf, sizeof(buf), ">FB:%.2f", feedback);
-            break;
-        }
-
-        hw.display.SetCursor(0, 28);
-        hw.display.WriteString(buf, Font_6x8, true);
+        data.encoderInc = lastEncInc;
     }
-
-    if (encoderLongPress && menuPage != PAGE_CALIB)
-    {
-        snprintf(buf, sizeof(buf), "X12 %.2f X21 %.2f", cross12, cross21);
-        hw.display.SetCursor(0, 28);
-        hw.display.WriteString(buf, Font_6x8, true);
-    }
-
-    hw.display.Update();
+    data.encoderPressed = encPressed;
+    data.encoderHeldMs = encHeldMs;
+    data.encoderSteps = encSteps;
+    return data;
 }
 
 void AudioCallback(AudioHandle::InputBuffer in,
@@ -359,7 +251,7 @@ void AudioCallback(AudioHandle::InputBuffer in,
 {
     UpdateControlsFast();
 
-    const bool isCalib = (menuPage == PAGE_CALIB);
+    const bool isCalib = (menuPageIndex == PAGE_CALIB);
     const float localMix = mix;
     const float localFeedback = feedback;
     const float localCross12 = cross12;
@@ -371,14 +263,13 @@ void AudioCallback(AudioHandle::InputBuffer in,
     const float delaySamples1 = sampleRate / std::max(currentFreq, 1.0f);
     const float delaySamples2 = sampleRate / std::max(currentFreq2, 1.0f);
 
-    delay1.SetDelay(delaySamples1);
-    delay2.SetDelay(delaySamples2);
+    delays.SetDelayTimes(delaySamples1, delaySamples2);
 
     for (size_t i = 0; i < size; i++)
     {
         if (isCalib)
         {
-            calibPhase = calibPhase + kCalibTone / sampleRate;
+            calibPhase += kCalibTone / sampleRate;
             if (calibPhase >= 1.0f)
                 calibPhase -= 1.0f;
             const float tone = std::sin(calibPhase * kTwoPi) * 0.5f;
@@ -390,14 +281,14 @@ void AudioCallback(AudioHandle::InputBuffer in,
         const float in1 = SoftClipSample(in[0][i]);
         const float in2 = SoftClipSample(in[1][i]);
 
-        const float y1 = delay1.Read();
-        const float y2 = delay2.Read();
+        const float y1 = delays.Read1();
+        const float y2 = delays.Read2();
 
         float fb1 = y1 * localFeedback + y2 * localCross21;
         float fb2 = y2 * localFeedback + y1 * localCross12;
 
-        fb1 = fbFilter1.Process(fb1);
-        fb2 = fbFilter2.Process(fb2);
+        fb1 = feedbackFilters.Process1(fb1);
+        fb2 = feedbackFilters.Process2(fb2);
 
         float write1 = SoftClipSample(fb1);
         float write2 = SoftClipSample(fb2);
@@ -409,12 +300,12 @@ void AudioCallback(AudioHandle::InputBuffer in,
         }
         else
         {
-            delay1.AddAt(delaySamples1 * localInputPos, in1);
-            delay2.AddAt(delaySamples2 * localInputPos, in2);
+            delays.AddAt1(delaySamples1 * localInputPos, in1);
+            delays.AddAt2(delaySamples2 * localInputPos, in2);
         }
 
-        delay1.Write(write1);
-        delay2.Write(write2);
+        delays.Write1(write1);
+        delays.Write2(write2);
 
         const float wet1 = y1;
         const float wet2 = y2;
@@ -431,19 +322,9 @@ int main(void)
 
     sampleRate = hw.AudioSampleRate();
 
-    delay1.Init();
-    delay2.Init();
-
-    fbFilter1.Init();
-    fbFilter2.Init();
-    UpdateFeedbackFilters();
-
-    hw.display.Fill(false);
-    hw.display.SetCursor(0, 0);
-    hw.display.WriteString("Resonators", Font_6x8, true);
-    hw.display.SetCursor(0, 12);
-    hw.display.WriteString("Booting...", Font_6x8, true);
-    hw.display.Update();
+    delays.Init();
+    feedbackFilters.Init();
+    feedbackFilters.SetDamp(damp);
 
     CalibSettings defaults{1.0f, 0.0f};
     static PersistentStorage<CalibSettings> storage(hw.seed.qspi);
@@ -452,6 +333,13 @@ int main(void)
     savedCalib = storage.GetSettings();
     pitchScale = savedCalib.scale;
     pitchOffset = savedCalib.offset;
+
+    hw.display.Fill(false);
+    hw.display.SetCursor(0, 0);
+    hw.display.WriteString("Resonators", Font_6x8, true);
+    hw.display.SetCursor(0, 12);
+    hw.display.WriteString("Booting...", Font_6x8, true);
+    hw.display.Update();
 
     hw.StartAudio(AudioCallback);
 
@@ -474,7 +362,7 @@ int main(void)
         }
         if (now - lastDisplayUpdate > 33)
         {
-            UpdateDisplay();
+            RenderDisplay(hw, BuildDisplayData());
             lastDisplayUpdate = now;
         }
     }
