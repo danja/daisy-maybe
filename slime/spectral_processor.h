@@ -2,7 +2,6 @@
 
 #include <cstddef>
 
-#include "arm_math.h"
 
 enum class SpectralProcess
 {
@@ -27,6 +26,16 @@ class SpectralChannel
     static constexpr size_t kHopSize = 256;
     static constexpr size_t kNumBins = kFftSize / 2 + 1;
 
+    struct FftPlan
+    {
+        void Init();
+        void Execute(float *re, float *im, bool inverse);
+
+        float    cosTable[kFftSize / 2]{};
+        float    sinTable[kFftSize / 2]{};
+        uint16_t bitRev[kFftSize]{};
+    };
+
     void ProcessFrame(SpectralProcess process, float timeRatio, float vibe);
     void UnpackSpectrum();
     void PackSpectrum();
@@ -40,9 +49,8 @@ class SpectralChannel
     size_t inputWrite_ = 0;
     size_t hopCounter_ = 0;
 
-    float fftIn_[kFftSize]{};
-    float fftOut_[kFftSize]{};
-    float ifftOut_[kFftSize]{};
+    float fftRe_[kFftSize]{};
+    float fftIm_[kFftSize]{};
 
     float re_[kNumBins]{};
     float im_[kNumBins]{};
@@ -51,12 +59,14 @@ class SpectralChannel
     float tempIm_[kNumBins]{};
     float smoothMag_[kNumBins]{};
     float freezeMag_[kNumBins]{};
+    float overlapInv_[kHopSize]{};
 
     static constexpr size_t kOutputBufferSize = 4096;
     float outputRing_[kOutputBufferSize]{};
     size_t outputRead_ = 0;
     size_t outputWrite_ = 0;
+    bool outputPrimed_ = false;
 
     const float *window_ = nullptr;
-    arm_rfft_fast_instance_f32 fft_{};
+    FftPlan fft_{};
 };

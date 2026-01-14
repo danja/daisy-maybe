@@ -8,6 +8,9 @@ encoder_handler.cpp \
 spectral_processor.cpp \
 $(BLUEMCHEN_DIR)/src/kxmx_bluemchen.cpp
 
+# Reduce code size to fit flash
+OPT = -Os
+
 # Library Locations
 LIBDAISY_DIR = ../../libDaisy
 DAISYSP_DIR = ../../DaisySP
