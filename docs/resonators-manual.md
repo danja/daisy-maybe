@@ -61,7 +61,6 @@ This firmware turns the module into a pair of tuned delay-line resonators. Each 
 | CV 2 | Resonator 2 offset mod | 0 to +1 octave | Adds to Knob 2 |
 | Encoder rotate | Menu value | Depends on page | See menu below |
 | Encoder short press | Page select | CAL → FB → X12 → X21 → INP → DAMP → MIX | Cycles pages |
-| Encoder long press | Overlay | On/Off | Shows cross-feedback values |
 
 ## Menu Pages
 

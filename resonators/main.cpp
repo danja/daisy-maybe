@@ -106,7 +106,7 @@ float MapExpo(float value, float minVal, float maxVal)
     return minVal * powf(maxVal / minVal, value);
 }
 
-void UpdateControlsFast()
+void UpdateControls()
 {
     hw.ProcessAnalogControls();
     hw.ProcessDigitalControls();
@@ -249,8 +249,6 @@ void AudioCallback(AudioHandle::InputBuffer in,
                    AudioHandle::OutputBuffer out,
                    size_t size)
 {
-    UpdateControlsFast();
-
     const bool isCalib = (menuPageIndex == PAGE_CALIB);
     const float localMix = mix;
     const float localFeedback = feedback;
@@ -346,6 +344,7 @@ int main(void)
     uint32_t lastDisplayUpdate = 0;
     while (1)
     {
+        UpdateControls();
         HandleCalibrationSave();
 
         const uint32_t now = System::GetNow();
