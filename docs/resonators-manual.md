@@ -9,7 +9,7 @@ This firmware turns the module into a pair of tuned delay-line resonators. Each 
 ### Key Specifications
 
 - **Audio Rate**: 48 kHz
-- **Resonator Range**: ~20 Hz - 2 kHz (base), V/Oct tracking via CV1
+- **Resonator Range**: ~10 Hz - 8 kHz (base), V/Oct tracking via CV1
 - **CV Inputs**: 2x 0-5V
 - **Audio Inputs**: 2x (one per resonator)
 - **Audio Outputs**: 2x (one per resonator)
@@ -55,10 +55,10 @@ This firmware turns the module into a pair of tuned delay-line resonators. Each 
 
 | Control | Function | Range | Notes |
 |---------|----------|-------|-------|
-| Knob 1 | Base pitch | ~20 Hz - 2 kHz | Exponential mapping |
-| CV 1 | V/Oct pitch | 5 octaves | Applies to both resonators |
-| Knob 2 | Resonator 2 offset | -1 to +1 octave | Added on top of resonator 1 |
-| CV 2 | Resonator 2 offset mod | 0 to +1 octave | Adds to Knob 2 |
+| Knob 1 | Base pitch | ~10 Hz - 8 kHz | Exponential mapping |
+| CV 1 | V/Oct pitch | 5 octaves | Bipolar around knob center |
+| Knob 2 | Resonator 2 offset | -4 to +4 octaves | Bipolar offset around knob center |
+| CV 2 | Resonator 2 offset mod | -4 to +4 octaves | Bipolar modulation |
 | Encoder rotate | Menu value | Depends on page | See menu below |
 | Encoder short press | Page select | CAL → FB → X12 → X21 → INP → DAMP → MIX | Cycles pages |
 

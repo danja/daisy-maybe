@@ -5,8 +5,8 @@ A set of firmwares for the kxmx_bluemchen Eurorack module, including DSF synthes
 ## Projects
 
 - **daisy-dsf**: Discrete Summation Formula (DSF) synthesizer porting algorithms from the disyn browser synth project.
-- **resonators**: Dual delay‑line resonators with 1V/oct pitch tracking, cross‑feedback, damping, and calibration.
-- **slime**: Stereo FFT spectral processor with time smear, spectral effects, and a compact menu system.
+- **resonators**: Dual delay‑line resonators with 1V/oct tracking, cross‑feedback, damping, calibration, and bipolar knob/CV offsets.
+- **slime**: Stereo FFT spectral processor with time smear, multiple spectral effects, debug pages, and bipolar knob/CV control.
 
 ## daisy-dsf Features
 
@@ -174,6 +174,11 @@ For detailed debugging instructions with ST-Link, see [docs/debugging.md](docs/d
 ## Usage
 
 For detailed operation instructions, see [docs/dsf-manual.md](docs/dsf-manual.md).
+
+Additional docs:
+- [docs/resonators-manual.md](docs/resonators-manual.md)
+- [docs/slime-manual.md](docs/slime-manual.md)
+- [docs/dependencies.md](docs/dependencies.md)
 
 ### Quick Start
 
