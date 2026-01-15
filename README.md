@@ -1,12 +1,16 @@
 # kxmx_bluemchen Firmware Collection
 
-A set of firmwares for the kxmx_bluemchen Eurorack module, including DSF synthesis, dual resonators, and the Slime spectral processor.
+A set of firmwares for the [kxmx_bluemchen](https://kxmx-bluemchen.recursinging.com/) Eurorack module, including DSF synthesis, dual resonators, and the Slime spectral processor.
+
+See also [Flues synth experiments](https://github.com/danja/flues) and [disyn-esp32](https://github.com/danja/disyn-esp32)
 
 ## Projects
 
 - **daisy-dsf**: Discrete Summation Formula (DSF) synthesizer porting algorithms from the disyn browser synth project.
 - **resonators**: Dual delay‑line resonators with 1V/oct tracking, cross‑feedback, damping, calibration, and bipolar knob/CV offsets.
 - **slime**: Stereo FFT spectral processor with time smear, multiple spectral effects, debug pages, and bipolar knob/CV control.
+
+**Status 2026-01-15 :** all three have been tested on hardware and work a treat. There are rough edges - the material shown on display could be tidied up a lot and various parameters could be tweaked. But the are good enough for my rack.
 
 ## daisy-dsf Features
 
