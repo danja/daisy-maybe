@@ -50,6 +50,7 @@ Menu pages:
 1. **Process**: Select spectral algorithm.
 2. **Time Ratio**: Multiplier for channel 2 relative to channel 1 (0.25x–4x).
 3. **Mix**: Dry/wet mix (0–100%).
+4. **Debug**: Shows page index and process index for mode verification.
 
 ## Display
 
@@ -67,3 +68,6 @@ OLED should show:
 - Clamp Vibe and Time parameters to safe ranges to prevent NaN/inf in spectral math.
 - Make spectral processes deterministic frame-to-frame to avoid jitter.
 
+## TODO
+
+- Try removing phase accumulation to confirm it is not overdamping the effect.

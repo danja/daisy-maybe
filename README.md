@@ -1,8 +1,14 @@
-# DSF Oscillator for kxmx_bluemchen
+# kxmx_bluemchen Firmware Collection
 
-A Discrete Summation Formula (DSF) synthesizer for the kxmx_bluemchen Eurorack module, porting algorithms from the disyn browser synth project.
+A set of firmwares for the kxmx_bluemchen Eurorack module, including DSF synthesis, dual resonators, and the Slime spectral processor.
 
-## Features
+## Projects
+
+- **daisy-dsf**: Discrete Summation Formula (DSF) synthesizer porting algorithms from the disyn browser synth project.
+- **resonators**: Dual delay‑line resonators with 1V/oct pitch tracking, cross‑feedback, damping, and calibration.
+- **slime**: Stereo FFT spectral processor with time smear, spectral effects, and a compact menu system.
+
+## daisy-dsf Features
 
 - **Six synthesis algorithms:**
   - Classic DSF (Moorer 1976) - Band-limited sawtooth-like waveforms

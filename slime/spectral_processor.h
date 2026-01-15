@@ -9,6 +9,10 @@ enum class SpectralProcess
     Shift,
     Comb,
     Freeze,
+    Gate,
+    Tilt,
+    Fold,
+    Phase,
     Count
 };
 
@@ -43,6 +47,11 @@ class SpectralChannel
     void ApplyShift(float vibe);
     void ApplyComb(float vibe);
     void ApplyFreeze(float vibe);
+    void ApplyGate(float vibe);
+    void ApplyTilt(float vibe);
+    void ApplyFold(float vibe);
+    void ApplyPhaseWarp(float vibe);
+    void ApplyPhaseContinuity();
     void ApplyTimeSmoothing(float timeRatio);
 
     float inputRing_[kFftSize]{};
@@ -59,6 +68,8 @@ class SpectralChannel
     float tempIm_[kNumBins]{};
     float smoothMag_[kNumBins]{};
     float freezeMag_[kNumBins]{};
+    float prevPhase_[kNumBins]{};
+    float sumPhase_[kNumBins]{};
     float overlapInv_[kHopSize]{};
 
     static constexpr size_t kOutputBufferSize = 4096;
