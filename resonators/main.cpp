@@ -19,8 +19,8 @@ namespace
 #define M_PI 3.14159265358979323846f
 #endif
 
-    constexpr float kMinFreq = 20.0f;
-    constexpr float kMaxFreq = 2000.0f;
+    constexpr float kMinFreq = 10.0f;
+    constexpr float kMaxFreq = 8000.0f;
     constexpr float kMaxFeedback = 0.999f;
     constexpr float kMaxCross = 0.99f;
     constexpr float kCalibTone = 440.0f;
@@ -130,13 +130,18 @@ void UpdateControls()
     }
     else
     {
-        const float baseFreq = MapExpo(pot1, kMinFreq, kMaxFreq);
-        const float cvMultiplier = powf(2.0f, cv1 * 5.0f * pitchScale);
+        const float pot1Bipolar = (pot1 - 0.5f) * 2.0f;
+        const float cv1Bipolar = (cv1 - 0.5f) * 2.0f;
+        const float pot2Bipolar = (pot2 - 0.5f) * 2.0f;
+        const float cv2Bipolar = (cv2 - 0.5f) * 2.0f;
+        const float baseControl = std::clamp(0.5f + 0.5f * (pot1Bipolar + cv1Bipolar), 0.0f, 1.0f);
+        const float baseFreq = MapExpo(baseControl, kMinFreq, kMaxFreq);
+        const float cvMultiplier = powf(2.0f, cv1Bipolar * 5.0f * pitchScale);
         const float pitchMultiplier = powf(2.0f, pitchOffset);
         currentFreq = baseFreq * cvMultiplier * pitchMultiplier;
 
-        const float offsetOct = (pot2 - 0.5f) * 2.0f + cv2 * 1.0f;
-        const float offsetClamped = std::clamp(offsetOct, -2.0f, 2.0f);
+        const float offsetOct = (pot2Bipolar + cv2Bipolar) * 2.0f;
+        const float offsetClamped = std::clamp(offsetOct, -4.0f, 4.0f);
         currentFreq2 = currentFreq * powf(2.0f, offsetClamped);
     }
 
