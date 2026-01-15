@@ -14,6 +14,8 @@ See also [Flues synth experiments](https://github.com/danja/flues) and [disyn-es
 
 ## daisy-dsf Features
 
+*TODO update : the current version has drifted from this : the resonator and formant parts removed, a Trajectory algorithm added*
+
 - **Six synthesis algorithms:**
   - Classic DSF (Moorer 1976) - Band-limited sawtooth-like waveforms
   - Modified FM - DSF with frequency modulation
