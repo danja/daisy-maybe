@@ -19,11 +19,27 @@ namespace
 
 constexpr float kMinTime = 0.125f;
 constexpr float kMaxTime = 32.0f;
+constexpr float kInputGain = 1.4f;
+constexpr float kOutputGain = 0.9f;
+constexpr float kWetTrim = 0.8f;
+constexpr float kPeakDecay = 0.95f;
+constexpr size_t kDryDelaySamples = SpectralChannel::kFftSize;
 
 float MapExpo(float value, float minVal, float maxVal)
 {
     value = std::clamp(value, 0.0f, 1.0f);
     return minVal * powf(maxVal / minVal, value);
+}
+
+float SoftClipInput(float sample)
+{
+    const float absSample = std::fabs(sample);
+    return sample / (1.0f + absSample);
+}
+
+float SoftClip(float sample)
+{
+    return std::clamp(sample, -1.0f, 1.0f);
 }
 } // namespace
 
@@ -39,19 +55,27 @@ float timeBase = 1.0f;
 float timeRatio = 1.0f;
 float vibe = 0.0f;
 float mix = 1.0f;
-float lastCv1 = 0.0f;
-float lastCv2 = 0.0f;
-uint16_t lastRawK1 = 0;
-uint16_t lastRawK2 = 0;
-uint16_t lastRawCv1 = 0;
-uint16_t lastRawCv2 = 0;
+bool bypass = false;
+float peak1 = 0.0f;
+float peak2 = 0.0f;
+float peakIn = 0.0f;
+float peakOut = 0.0f;
+float peakInClip = 0.0f;
+float peakWet = 0.0f;
+float cpuPercent = 0.0f;
+float cpuMs = 0.0f;
+float cpuBudgetMs = 0.0f;
+float sampleRate = 48000.0f;
+float dryDelayL[kDryDelaySamples]{};
+float dryDelayR[kDryDelaySamples]{};
+size_t dryDelayIndex = 0;
 
 float windowLut[1024];
 
 bool heartbeatOn = false;
 uint32_t lastHeartbeatMs = 0;
 
-const char *processNames[] = {"SMR", "SFT", "CMB", "FRZ", "GAT", "TLT", "FLD", "PHS"};
+const char *processNames[] = {"Thru", "Smear", "Shift", "Comb", "Freeze", "Gate", "Tilt", "Fold", "Phase"};
 
 void UpdateControls()
 {
@@ -79,12 +103,15 @@ void UpdateControls()
         case 2:
             mix = std::clamp(mix + inc * 0.02f, 0.0f, 1.0f);
             break;
+        case 3:
+            bypass = !bypass;
+            break;
         default:
             break;
         }
     }
 
-    UpdateEncoder(hw, encoderState, 5, menuPageIndex);
+    UpdateEncoder(hw, encoderState, 7, menuPageIndex);
 }
 
 void UpdateAnalogControls()
@@ -95,14 +122,6 @@ void UpdateAnalogControls()
     const float pot2 = hw.GetKnobValue(Bluemchen::CTRL_2);
     const float cv1 = hw.GetKnobValue(Bluemchen::CTRL_3);
     const float cv2 = hw.GetKnobValue(Bluemchen::CTRL_4);
-
-    lastRawK1 = hw.controls[Bluemchen::CTRL_1].GetRawValue();
-    lastRawK2 = hw.controls[Bluemchen::CTRL_2].GetRawValue();
-    lastRawCv1 = hw.controls[Bluemchen::CTRL_3].GetRawValue();
-    lastRawCv2 = hw.controls[Bluemchen::CTRL_4].GetRawValue();
-
-    lastCv1 = cv1;
-    lastCv2 = cv2;
 
     const float pot1Bipolar = (pot1 - 0.5f) * 2.0f;
     const float pot2Bipolar = (pot2 - 0.5f) * 2.0f;
@@ -118,21 +137,79 @@ void AudioCallback(AudioHandle::InputBuffer in,
                    AudioHandle::OutputBuffer out,
                    size_t size)
 {
-    UpdateAnalogControls();
+    const uint32_t callbackStart = System::GetNow();
     const float time1 = std::clamp(timeBase, kMinTime, kMaxTime);
     const float time2 = std::clamp(timeBase * timeRatio, kMinTime, kMaxTime);
-    const float wet = mix;
-    const float dry = 1.0f - wet;
+    const float wetMix = mix;
+    const float dryMix = 1.0f - mix;
+    const bool dryOnly = (mix <= 0.001f);
+    float localPeak1 = 0.0f;
+    float localPeak2 = 0.0f;
+    float localPeakIn = 0.0f;
+    float localPeakOut = 0.0f;
+    float localPeakInClip = 0.0f;
+    float localPeakWet = 0.0f;
 
     for (size_t i = 0; i < size; ++i)
     {
-        const float wet1 = channel1.ProcessSample(in[0][i], processMode, time1, vibe);
-        const float wet2 = channel2.ProcessSample(in[1][i], processMode, time2, vibe);
-        const float mix1 = dry * in[0][i] + wet * wet1;
-        const float mix2 = dry * in[1][i] + wet * wet2;
-        out[0][i] = std::tanh(mix1);
-        out[1][i] = std::tanh(mix2);
+        const float inRaw1 = in[0][i] * kInputGain;
+        const float inRaw2 = in[1][i] * kInputGain;
+        localPeakIn = std::max(localPeakIn, std::fabs(inRaw1));
+        localPeakIn = std::max(localPeakIn, std::fabs(inRaw2));
+        const float in1 = SoftClipInput(inRaw1);
+        const float in2 = SoftClipInput(inRaw2);
+        localPeakInClip = std::max(localPeakInClip, std::fabs(in1));
+        localPeakInClip = std::max(localPeakInClip, std::fabs(in2));
+        if (bypass || dryOnly)
+        {
+            const float sample1 = in1 * kOutputGain;
+            const float sample2 = in2 * kOutputGain;
+            localPeak1 = std::max(localPeak1, std::fabs(sample1));
+            localPeak2 = std::max(localPeak2, std::fabs(sample2));
+            localPeakOut = std::max(localPeakOut, std::fabs(sample1));
+            localPeakOut = std::max(localPeakOut, std::fabs(sample2));
+            out[0][i] = SoftClip(sample1);
+            out[1][i] = SoftClip(sample2);
+            continue;
+        }
+        const float dry1 = dryDelayL[dryDelayIndex];
+        const float dry2 = dryDelayR[dryDelayIndex];
+        dryDelayL[dryDelayIndex] = in1;
+        dryDelayR[dryDelayIndex] = in2;
+        dryDelayIndex = (dryDelayIndex + 1) % kDryDelaySamples;
+        const float wet1Raw = (processMode == SpectralProcess::Thru)
+                                  ? in1
+                                  : channel1.ProcessSample(in1, processMode, time1, vibe);
+        const float wet2Raw = (processMode == SpectralProcess::Thru)
+                                  ? in2
+                                  : channel2.ProcessSample(in2, processMode, time2, vibe);
+        const float wet1 = std::clamp(wet1Raw, -1.0f, 1.0f) * kWetTrim;
+        const float wet2 = std::clamp(wet2Raw, -1.0f, 1.0f) * kWetTrim;
+        localPeakWet = std::max(localPeakWet, std::fabs(wet1));
+        localPeakWet = std::max(localPeakWet, std::fabs(wet2));
+        const float mix1 = (dryMix * dry1 + wetMix * wet1) * kOutputGain;
+        const float mix2 = (dryMix * dry2 + wetMix * wet2) * kOutputGain;
+        localPeak1 = std::max(localPeak1, std::fabs(mix1));
+        localPeak2 = std::max(localPeak2, std::fabs(mix2));
+        localPeakOut = std::max(localPeakOut, std::fabs(mix1));
+        localPeakOut = std::max(localPeakOut, std::fabs(mix2));
+        out[0][i] = SoftClip(mix1);
+        out[1][i] = SoftClip(mix2);
     }
+
+    peak1 = std::max(localPeak1, peak1 * kPeakDecay);
+    peak2 = std::max(localPeak2, peak2 * kPeakDecay);
+    peakIn = std::max(localPeakIn, peakIn * kPeakDecay);
+    peakOut = std::max(localPeakOut, peakOut * kPeakDecay);
+    peakInClip = std::max(localPeakInClip, peakInClip * kPeakDecay);
+    peakWet = std::max(localPeakWet, peakWet * kPeakDecay);
+    const uint32_t callbackEnd = System::GetNow();
+    const float elapsedMs = static_cast<float>(callbackEnd - callbackStart);
+    const float budgetMs = (static_cast<float>(size) * 1000.0f) / sampleRate;
+    const float load = budgetMs > 0.0f ? (elapsedMs / budgetMs) * 100.0f : 0.0f;
+    cpuPercent = std::max(load, cpuPercent * kPeakDecay);
+    cpuMs = elapsedMs;
+    cpuBudgetMs = budgetMs;
 }
 
 DisplayData BuildDisplay()
@@ -141,19 +218,22 @@ DisplayData BuildDisplay()
     const float time1 = std::clamp(timeBase, kMinTime, kMaxTime);
     const float time2 = std::clamp(timeBase * timeRatio, kMinTime, kMaxTime);
     data.processLabel = processNames[static_cast<int>(processMode)];
-    data.processIndex = static_cast<int>(processMode);
     data.time1 = time1;
     data.time2 = time2;
     data.vibe = vibe;
     data.mix = mix;
-    data.cv1 = lastCv1;
-    data.cv2 = lastCv2;
-    data.rawK1 = lastRawK1;
-    data.rawK2 = lastRawK2;
-    data.rawCv1 = lastRawCv1;
-    data.rawCv2 = lastRawCv2;
     data.menuPage = menuPageIndex;
     data.heartbeatOn = heartbeatOn;
+    data.bypass = bypass;
+    data.peak1 = peak1;
+    data.peak2 = peak2;
+    data.peakIn = peakIn;
+    data.peakOut = peakOut;
+    data.peakInClip = peakInClip;
+    data.peakWet = peakWet;
+    data.cpuPercent = cpuPercent;
+    data.cpuMs = cpuMs;
+    data.cpuBudgetMs = cpuBudgetMs;
     return data;
 }
 
@@ -161,6 +241,7 @@ int main(void)
 {
     hw.Init();
     hw.StartAdc();
+    sampleRate = hw.AudioSampleRate();
 
     for (size_t i = 0; i < 1024; ++i)
     {
@@ -169,8 +250,8 @@ int main(void)
         windowLut[i] = sqrtf(std::max(hann, 0.0f));
     }
 
-    channel1.Init(hw.AudioSampleRate(), windowLut);
-    channel2.Init(hw.AudioSampleRate(), windowLut);
+    channel1.Init(sampleRate, windowLut);
+    channel2.Init(sampleRate, windowLut);
 
     hw.StartAudio(AudioCallback);
 
@@ -178,6 +259,7 @@ int main(void)
     while (1)
     {
         UpdateControls();
+        UpdateAnalogControls();
 
         const uint32_t now = System::GetNow();
         if (now - lastHeartbeatMs > 250)

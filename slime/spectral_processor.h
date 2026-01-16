@@ -2,9 +2,13 @@
 
 #include <cstddef>
 
+#include "spectral_constants.h"
+#include "spectral_fft.h"
+#include "spectral_processors.h"
 
 enum class SpectralProcess
 {
+    Thru,
     Smear,
     Shift,
     Comb,
@@ -19,6 +23,10 @@ enum class SpectralProcess
 class SpectralChannel
 {
   public:
+    static constexpr size_t kFftSize = kSpectralFftSize;
+    static constexpr size_t kHopSize = kSpectralHopSize;
+    static constexpr size_t kNumBins = kSpectralNumBins;
+
     void Init(float sampleRate, const float *window);
     float ProcessSample(float input,
                         SpectralProcess process,
@@ -26,31 +34,9 @@ class SpectralChannel
                         float vibe);
 
   private:
-    static constexpr size_t kFftSize = 1024;
-    static constexpr size_t kHopSize = 256;
-    static constexpr size_t kNumBins = kFftSize / 2 + 1;
-
-    struct FftPlan
-    {
-        void Init();
-        void Execute(float *re, float *im, bool inverse);
-
-        float    cosTable[kFftSize / 2]{};
-        float    sinTable[kFftSize / 2]{};
-        uint16_t bitRev[kFftSize]{};
-    };
-
     void ProcessFrame(SpectralProcess process, float timeRatio, float vibe);
     void UnpackSpectrum();
     void PackSpectrum();
-    void ApplySmear(float vibe);
-    void ApplyShift(float vibe);
-    void ApplyComb(float vibe);
-    void ApplyFreeze(float vibe);
-    void ApplyGate(float vibe);
-    void ApplyTilt(float vibe);
-    void ApplyFold(float vibe);
-    void ApplyPhaseWarp(float vibe);
     void ApplyPhaseContinuity();
     void ApplyTimeSmoothing(float timeRatio);
 
@@ -79,5 +65,5 @@ class SpectralChannel
     bool outputPrimed_ = false;
 
     const float *window_ = nullptr;
-    FftPlan fft_{};
+    SpectralFft fft_{};
 };

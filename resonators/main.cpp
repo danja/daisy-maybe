@@ -25,6 +25,7 @@ namespace
     constexpr float kMaxCross = 0.99f;
     constexpr float kCalibTone = 440.0f;
     constexpr float kTwoPi = 2.0f * static_cast<float>(M_PI);
+    constexpr float kMaxReed = 1.0f;
 
     struct CalibSettings
     {
@@ -51,6 +52,8 @@ float feedback = 0.7f;
 float cross12 = 0.0f;
 float cross21 = 0.0f;
 float inputPos = 0.0f;
+float reedAmount = 0.0f;
+float reedBias = 0.5f;
 float damp = 0.0f;
 float mix = 1.0f;
 
@@ -59,6 +62,8 @@ bool encoderLongPress = false;
 uint32_t lastCalibChangeMs = 0;
 bool calibDirty = false;
 bool calibSavePending = false;
+bool showSaveConfirm = false;
+uint32_t saveConfirmUntilMs = 0;
 CalibSettings savedCalib = {1.0f, 0.0f};
 PersistentStorage<CalibSettings> *calibStorage = nullptr;
 
@@ -81,6 +86,8 @@ enum MenuPage
     PAGE_CROSS12,
     PAGE_CROSS21,
     PAGE_INPUT_POS,
+    PAGE_REED,
+    PAGE_REED_BIAS,
     PAGE_DAMP,
     PAGE_MIX,
 };
@@ -94,6 +101,8 @@ const char *menuNames[] = {
     "X12",
     "X21",
     "INP",
+    "RED",
+    "RB",
     "DAMP",
     "MIX",
 };
@@ -104,6 +113,18 @@ float MapExpo(float value, float minVal, float maxVal)
 {
     value = std::clamp(value, 0.0f, 1.0f);
     return minVal * powf(maxVal / minVal, value);
+}
+
+float ApplyReed(float input, float amount, float bias)
+{
+    if (amount <= 0.0f)
+        return input;
+
+    const float drive = 1.0f + amount * 6.0f;
+    const float biased = input + bias * 0.3f * amount;
+    const float soft = std::tanh(biased * drive);
+    const float asym = biased >= 0.0f ? soft * (1.0f - 0.35f * amount) : soft;
+    return input * (1.0f - amount) + asym * amount;
 }
 
 void UpdateControls()
@@ -120,6 +141,9 @@ void UpdateControls()
     {
         pitchScale = 0.8f + pot1 * 0.4f;
         pitchOffset = (pot2 - 0.5f) * 2.0f;
+        const float cv1Bipolar = (cv1 - 0.5f) * 2.0f;
+        const float base = 440.0f * powf(2.0f, pitchOffset);
+        currentFreq = base * powf(2.0f, cv1Bipolar * 5.0f * pitchScale);
 
         const uint32_t now = System::GetNow();
         if (fabsf(pitchScale - savedCalib.scale) > 0.0005f || fabsf(pitchOffset - savedCalib.offset) > 0.005f)
@@ -170,6 +194,12 @@ void UpdateControls()
         case PAGE_INPUT_POS:
             inputPos = std::clamp(inputPos + encInc * 0.02f, 0.0f, 1.0f);
             break;
+        case PAGE_REED:
+            reedAmount = std::clamp(reedAmount + encInc * 0.02f, 0.0f, kMaxReed);
+            break;
+        case PAGE_REED_BIAS:
+            reedBias = std::clamp(reedBias + encInc * 0.02f, 0.0f, 1.0f);
+            break;
         case PAGE_DAMP:
             damp = std::clamp(damp + encInc * 0.02f, 0.0f, 1.0f);
             feedbackFilters.SetDamp(damp);
@@ -183,6 +213,7 @@ void UpdateControls()
     }
 
     const int prevPage = menuPageIndex;
+    const bool prevLongPress = encoderLongPress;
     UpdateEncoder(hw, encoderState, kNumPages, menuPageIndex, encoderLongPress);
     if (prevPage != menuPageIndex)
     {
@@ -191,6 +222,11 @@ void UpdateControls()
             calibSavePending = true;
         }
         lastMenuPageIndex = menuPageIndex;
+    }
+    if (menuPageIndex == PAGE_CALIB && encoderLongPress && encoderLongPress != prevLongPress)
+    {
+        calibSavePending = true;
+        calibDirty = true;
     }
 }
 
@@ -215,6 +251,8 @@ void HandleCalibrationSave()
         savedCalib = calibStorage->GetSettings();
         calibDirty = false;
         calibSavePending = false;
+        showSaveConfirm = true;
+        saveConfirmUntilMs = now + 800;
     }
 }
 
@@ -231,7 +269,10 @@ DisplayData BuildDisplayData()
     data.cross12 = cross12;
     data.cross21 = cross21;
     data.inputPos = inputPos;
+    data.reedAmount = reedAmount;
+    data.reedBias = reedBias;
     data.mix = mix;
+    data.showSaveConfirm = showSaveConfirm;
     data.menuLabel = menuNames[menuPageIndex];
     data.encoderLongPress = encoderLongPress;
     data.heartbeatOn = heartbeatOn;
@@ -272,7 +313,8 @@ void AudioCallback(AudioHandle::InputBuffer in,
     {
         if (isCalib)
         {
-            calibPhase += kCalibTone / sampleRate;
+            const float toneFreq = std::clamp(currentFreq, 20.0f, 8000.0f);
+            calibPhase += toneFreq / sampleRate;
             if (calibPhase >= 1.0f)
                 calibPhase -= 1.0f;
             const float tone = std::sin(calibPhase * kTwoPi) * 0.5f;
@@ -281,8 +323,9 @@ void AudioCallback(AudioHandle::InputBuffer in,
             continue;
         }
 
-        const float in1 = SoftClipSample(in[0][i]);
+        float in1 = SoftClipSample(in[0][i]);
         const float in2 = SoftClipSample(in[1][i]);
+        in1 = ApplyReed(in1, reedAmount, (reedBias - 0.5f) * 2.0f);
 
         const float y1 = delays.Read1();
         const float y2 = delays.Read2();
@@ -366,6 +409,10 @@ int main(void)
         }
         if (now - lastDisplayUpdate > 33)
         {
+            if (showSaveConfirm && now > saveConfirmUntilMs)
+            {
+                showSaveConfirm = false;
+            }
             RenderDisplay(hw, BuildDisplayData());
             lastDisplayUpdate = now;
         }

@@ -19,7 +19,16 @@ void RenderDisplay(Bluemchen &hw, const DisplayData &data)
     snprintf(buf, sizeof(buf), "Res %s%c", data.menuLabel, data.heartbeatOn ? '.' : ' ');
     hw.display.WriteString(buf, Font_6x8, true);
 
-    if (data.isCalib)
+    if (data.showSaveConfirm)
+    {
+        hw.display.SetCursor(0, 8);
+        hw.display.WriteString("CAL SAVED", Font_6x8, true);
+        hw.display.SetCursor(0, 16);
+        hw.display.WriteString("Hold to save", Font_6x8, true);
+        hw.display.SetCursor(0, 24);
+        hw.display.WriteString("Knobs active", Font_6x8, true);
+    }
+    else if (data.isCalib)
     {
         const int scaleMilli = static_cast<int>(data.pitchScale * 1000.0f + 0.5f);
         const int offsetCents = static_cast<int>(data.pitchOffset * 100.0f + (data.pitchOffset >= 0.0f ? 0.5f : -0.5f));
@@ -60,6 +69,12 @@ void RenderDisplay(Bluemchen &hw, const DisplayData &data)
             break;
         case 'I': // INP
             snprintf(buf, sizeof(buf), "IN%3d", static_cast<int>(data.inputPos * 100.0f + 0.5f));
+            break;
+        case 'R': // RED
+            if (data.menuLabel[1] == 'B')
+                snprintf(buf, sizeof(buf), "RB%3d", static_cast<int>(data.reedBias * 100.0f + 0.5f));
+            else
+                snprintf(buf, sizeof(buf), "RD%3d", static_cast<int>(data.reedAmount * 100.0f + 0.5f));
             break;
         case 'D': // DAMP
             snprintf(buf, sizeof(buf), "DP%3d", static_cast<int>(data.damp * 100.0f + 0.5f));

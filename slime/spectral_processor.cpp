@@ -11,81 +11,30 @@ namespace
 {
 constexpr float kEps = 1.0e-9f;
 constexpr float kMinMag = 1.0e-6f;
-constexpr float kMaxScale = 10.0f;
 constexpr float kTwoPi = 2.0f * static_cast<float>(M_PI);
-constexpr float kWetGain = 0.6f;
-}
+constexpr float kWetGain = 0.7f;
+constexpr float kSpecMagLimit = 256.0f;
+constexpr bool kEnableTimeSmoothing = false;
+constexpr float kTimeSmoothMaxScale = 3.0f;
 
-void SpectralChannel::FftPlan::Init()
+void LimitSpectrum(float *re, float *im, size_t count)
 {
-    for (size_t i = 0; i < kFftSize / 2; ++i)
+    float maxMag = 0.0f;
+    for (size_t k = 0; k < count; ++k)
     {
-        const float phase = 2.0f * static_cast<float>(M_PI) * static_cast<float>(i) / static_cast<float>(kFftSize);
-        cosTable[i] = std::cos(phase);
-        sinTable[i] = std::sin(phase);
+        const float mag = std::sqrt(re[k] * re[k] + im[k] * im[k]);
+        maxMag = std::max(maxMag, mag);
     }
-
-    const size_t bits = 10;
-    for (size_t i = 0; i < kFftSize; ++i)
+    if (maxMag <= kSpecMagLimit || maxMag < kEps)
+        return;
+    const float scale = kSpecMagLimit / maxMag;
+    for (size_t k = 0; k < count; ++k)
     {
-        size_t x = i;
-        size_t y = 0;
-        for (size_t b = 0; b < bits; ++b)
-        {
-            y = (y << 1) | (x & 1u);
-            x >>= 1;
-        }
-        bitRev[i] = static_cast<uint16_t>(y);
+        re[k] *= scale;
+        im[k] *= scale;
     }
 }
-
-void SpectralChannel::FftPlan::Execute(float *re, float *im, bool inverse)
-{
-    for (size_t i = 0; i < kFftSize; ++i)
-    {
-        const size_t j = bitRev[i];
-        if (j > i)
-        {
-            std::swap(re[i], re[j]);
-            std::swap(im[i], im[j]);
-        }
-    }
-
-    for (size_t size = 2; size <= kFftSize; size <<= 1)
-    {
-        const size_t half = size >> 1;
-        const size_t step = kFftSize / size;
-        for (size_t start = 0; start < kFftSize; start += size)
-        {
-            for (size_t k = 0; k < half; ++k)
-            {
-                const size_t idx = k * step;
-                const float cosVal = cosTable[idx];
-                const float sinVal = inverse ? sinTable[idx] : -sinTable[idx];
-                const size_t even = start + k;
-                const size_t odd = even + half;
-                const float tre = cosVal * re[odd] - sinVal * im[odd];
-                const float tim = sinVal * re[odd] + cosVal * im[odd];
-                const float ure = re[even];
-                const float uim = im[even];
-                re[even] = ure + tre;
-                im[even] = uim + tim;
-                re[odd] = ure - tre;
-                im[odd] = uim - tim;
-            }
-        }
-    }
-
-    if (inverse)
-    {
-        const float scale = 1.0f / static_cast<float>(kFftSize);
-        for (size_t i = 0; i < kFftSize; ++i)
-        {
-            re[i] *= scale;
-            im[i] *= scale;
-        }
-    }
-}
+} // namespace
 
 void SpectralChannel::Init(float sampleRate, const float *window)
 {
@@ -154,38 +103,23 @@ void SpectralChannel::ProcessFrame(SpectralProcess process, float timeRatio, flo
     fft_.Execute(fftRe_, fftIm_, false);
 
     UnpackSpectrum();
+    SpectralFrame frame;
+    frame.bins = kNumBins;
+    frame.re = re_;
+    frame.im = im_;
+    frame.mag = mag_;
+    frame.temp = temp_;
+    frame.tempIm = tempIm_;
+    frame.smoothMag = smoothMag_;
+    frame.freezeMag = freezeMag_;
 
-    switch (process)
+    GetProcessor(static_cast<int>(process)).Process(frame, vibe);
+
+    if (kEnableTimeSmoothing && process != SpectralProcess::Thru)
     {
-    case SpectralProcess::Smear:
-        ApplySmear(vibe);
-        break;
-    case SpectralProcess::Shift:
-        ApplyShift(vibe);
-        break;
-    case SpectralProcess::Comb:
-        ApplyComb(vibe);
-        break;
-    case SpectralProcess::Freeze:
-        ApplyFreeze(vibe);
-        break;
-    case SpectralProcess::Gate:
-        ApplyGate(vibe);
-        break;
-    case SpectralProcess::Tilt:
-        ApplyTilt(vibe);
-        break;
-    case SpectralProcess::Fold:
-        ApplyFold(vibe);
-        break;
-    case SpectralProcess::Phase:
-        ApplyPhaseWarp(vibe);
-        break;
-    default:
-        break;
+        ApplyTimeSmoothing(timeRatio);
     }
-
-    ApplyTimeSmoothing(timeRatio);
+    LimitSpectrum(re_, im_, kNumBins);
     PackSpectrum();
 
     fft_.Execute(fftRe_, fftIm_, true);
@@ -235,189 +169,6 @@ void SpectralChannel::PackSpectrum()
         const size_t mirror = kFftSize - k;
         fftRe_[mirror] = re_[k];
         fftIm_[mirror] = -im_[k];
-    }
-}
-
-void SpectralChannel::ApplySmear(float vibe)
-{
-    const int radius = 1 + static_cast<int>(vibe * 80.0f);
-    for (size_t k = 0; k < kNumBins; ++k)
-    {
-        mag_[k] = std::sqrt(re_[k] * re_[k] + im_[k] * im_[k]);
-    }
-
-    for (size_t k = 0; k < kNumBins; ++k)
-    {
-        if (mag_[k] < kMinMag)
-        {
-            re_[k] = 0.0f;
-            im_[k] = 0.0f;
-            continue;
-        }
-        const int start = std::max(0, static_cast<int>(k) - radius);
-        const int end = std::min(static_cast<int>(kNumBins - 1), static_cast<int>(k) + radius);
-        float sum = 0.0f;
-        for (int i = start; i <= end; ++i)
-        {
-            sum += mag_[static_cast<size_t>(i)];
-        }
-        const float avg = sum / static_cast<float>(end - start + 1);
-        const float scale = std::min(avg / (mag_[k] + kEps), kMaxScale);
-        re_[k] *= scale;
-        im_[k] *= scale;
-    }
-}
-
-void SpectralChannel::ApplyShift(float vibe)
-{
-    const float scale = 0.1f + vibe * 3.0f;
-    std::fill(&temp_[0], &temp_[kNumBins], 0.0f);
-    std::fill(&tempIm_[0], &tempIm_[kNumBins], 0.0f);
-
-    for (size_t k = 0; k < kNumBins; ++k)
-    {
-        const float src = static_cast<float>(k) * scale;
-        if (src >= static_cast<float>(kNumBins - 1))
-            continue;
-        const size_t i0 = static_cast<size_t>(src);
-        const size_t i1 = std::min(i0 + 1, kNumBins - 1);
-        const float frac = src - static_cast<float>(i0);
-        const float re = re_[i0] + (re_[i1] - re_[i0]) * frac;
-        const float im = im_[i0] + (im_[i1] - im_[i0]) * frac;
-        temp_[k] = re;
-        tempIm_[k] = im;
-    }
-
-    for (size_t k = 0; k < kNumBins; ++k)
-    {
-        re_[k] = temp_[k];
-        im_[k] = tempIm_[k];
-    }
-}
-
-void SpectralChannel::ApplyComb(float vibe)
-{
-    const int period = 3 + static_cast<int>(vibe * 80.0f);
-    const int width = std::max(1, period / 4);
-    for (size_t k = 0; k < kNumBins; ++k)
-    {
-        const int slot = static_cast<int>(k) % period;
-        const float gain = slot < width ? 1.0f : 0.05f;
-        re_[k] *= gain;
-        im_[k] *= gain;
-    }
-}
-
-void SpectralChannel::ApplyFreeze(float vibe)
-{
-    const float decay = 0.9f + vibe * 0.099f;
-    for (size_t k = 0; k < kNumBins; ++k)
-    {
-        const float mag = std::sqrt(re_[k] * re_[k] + im_[k] * im_[k]);
-        freezeMag_[k] = std::max(mag, freezeMag_[k] * decay);
-        if (mag < kMinMag)
-        {
-            if (freezeMag_[k] < kMinMag)
-            {
-                re_[k] = 0.0f;
-                im_[k] = 0.0f;
-            }
-            continue;
-        }
-        const float scale = std::min(freezeMag_[k] / (mag + kEps), kMaxScale);
-        re_[k] *= scale;
-        im_[k] *= scale;
-    }
-}
-
-void SpectralChannel::ApplyGate(float vibe)
-{
-    float maxMag = 0.0f;
-    for (size_t k = 0; k < kNumBins; ++k)
-    {
-        mag_[k] = std::sqrt(re_[k] * re_[k] + im_[k] * im_[k]);
-        if (mag_[k] > maxMag)
-            maxMag = mag_[k];
-    }
-    const float amount = 0.15f + std::clamp(vibe, 0.0f, 1.0f) * 0.85f;
-    const float threshold = maxMag * amount;
-    const float knee = std::max(threshold * 0.1f, kMinMag);
-
-    for (size_t k = 0; k < kNumBins; ++k)
-    {
-        const float mag = mag_[k];
-        if (mag < kMinMag)
-        {
-            re_[k] = 0.0f;
-            im_[k] = 0.0f;
-            continue;
-        }
-        float gain = 1.0f;
-        if (mag < threshold)
-        {
-            gain = mag / (threshold + kEps);
-        }
-        if (mag < knee)
-        {
-            gain *= mag / (knee + kEps);
-        }
-        gain = std::clamp(gain, 0.0f, 1.0f);
-        re_[k] *= gain;
-        im_[k] *= gain;
-    }
-}
-
-void SpectralChannel::ApplyTilt(float vibe)
-{
-    const float tilt = ((std::clamp(vibe, 0.0f, 1.0f) * 2.0f) - 1.0f) * 3.0f;
-    for (size_t k = 0; k < kNumBins; ++k)
-    {
-        const float pos = static_cast<float>(k) / static_cast<float>(kNumBins - 1);
-        float gain = 1.0f + tilt * (pos - 0.5f) * 2.4f;
-        gain = std::clamp(gain, 0.05f, 6.0f);
-        re_[k] *= gain;
-        im_[k] *= gain;
-    }
-}
-
-void SpectralChannel::ApplyFold(float vibe)
-{
-    const float center = std::clamp(vibe, 0.0f, 1.0f) * static_cast<float>(kNumBins - 1);
-    std::fill(&temp_[0], &temp_[kNumBins], 0.0f);
-    std::fill(&tempIm_[0], &tempIm_[kNumBins], 0.0f);
-
-    for (size_t k = 0; k < kNumBins; ++k)
-    {
-        const float src = std::fabs(static_cast<float>(k) - center);
-        const float mapped = center - src;
-        const float clamped = std::clamp(mapped, 0.0f, static_cast<float>(kNumBins - 1));
-        const size_t i0 = static_cast<size_t>(clamped);
-        const size_t i1 = std::min(i0 + 1, kNumBins - 1);
-        const float frac = clamped - static_cast<float>(i0);
-        temp_[k] = re_[i0] + (re_[i1] - re_[i0]) * frac;
-        tempIm_[k] = im_[i0] + (im_[i1] - im_[i0]) * frac;
-    }
-
-    for (size_t k = 0; k < kNumBins; ++k)
-    {
-        re_[k] = temp_[k];
-        im_[k] = tempIm_[k];
-    }
-}
-
-void SpectralChannel::ApplyPhaseWarp(float vibe)
-{
-    const float warp = (std::clamp(vibe, 0.0f, 1.0f) * 2.0f - 1.0f) * kTwoPi;
-    for (size_t k = 0; k < kNumBins; ++k)
-    {
-        const float pos = static_cast<float>(k) / static_cast<float>(kNumBins - 1);
-        const float angle = warp * pos;
-        const float c = std::cos(angle);
-        const float s = std::sin(angle);
-        const float re = re_[k];
-        const float im = im_[k];
-        re_[k] = re * c - im * s;
-        im_[k] = re * s + im * c;
     }
 }
 
@@ -471,7 +222,7 @@ void SpectralChannel::ApplyTimeSmoothing(float timeRatio)
             continue;
         }
         smoothMag_[k] += alpha * (mag - smoothMag_[k]);
-        const float scale = std::min(smoothMag_[k] / (mag + kEps), kMaxScale);
+        const float scale = std::min(smoothMag_[k] / (mag + kEps), kTimeSmoothMaxScale);
         re_[k] *= scale;
         im_[k] *= scale;
     }

@@ -14,7 +14,10 @@ struct DisplayData
     float       cross12 = 0.0f;
     float       cross21 = 0.0f;
     float       inputPos = 0.0f;
+    float       reedAmount = 0.0f;
+    float       reedBias = 0.5f;
     float       mix = 1.0f;
+    bool        showSaveConfirm = false;
     const char *menuLabel = "FB";
     bool        encoderLongPress = false;
     bool        heartbeatOn = false;
