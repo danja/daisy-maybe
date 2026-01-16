@@ -132,6 +132,10 @@ void SpectralChannel::ProcessFrame(SpectralProcess process, float timeRatio, flo
 
     UnpackSpectrum();
     const float preRms = ComputeMagRms(re_, im_, kNumBins);
+    for (size_t k = 0; k < kNumBins; ++k)
+    {
+        mag_[k] = std::atan2(im_[k], re_[k]);
+    }
     SpectralFrame frame;
     frame.bins = kNumBins;
     frame.re = re_;
@@ -144,6 +148,17 @@ void SpectralChannel::ProcessFrame(SpectralProcess process, float timeRatio, flo
 
     GetProcessor(static_cast<int>(process)).Process(frame, vibe);
 
+    if (process != SpectralProcess::Thru)
+    {
+        for (size_t k = 0; k < kNumBins; ++k)
+        {
+            const float phase = mag_[k];
+            const float amplitude = std::sqrt(re_[k] * re_[k] + im_[k] * im_[k]);
+            re_[k] = amplitude * std::cos(phase);
+            im_[k] = amplitude * std::sin(phase);
+        }
+        ApplyPhaseContinuity();
+    }
     if (kEnableTimeSmoothing && process != SpectralProcess::Thru)
     {
         ApplyTimeSmoothing(timeRatio);

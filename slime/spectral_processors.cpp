@@ -25,6 +25,16 @@ FoldProcessor foldProcessor;
 PhaseProcessor phaseProcessor;
 } // namespace
 
+float ShortestPhaseDelta(float from, float to)
+{
+    float delta = to - from;
+    while (delta > static_cast<float>(M_PI))
+        delta -= kTwoPi;
+    while (delta < -static_cast<float>(M_PI))
+        delta += kTwoPi;
+    return delta;
+}
+
 void ThruProcessor::Process(SpectralFrame &frame, float vibe) const
 {
     (void)frame;
@@ -79,16 +89,22 @@ void ShiftProcessor::Process(SpectralFrame &frame, float vibe) const
 
     for (size_t k = 0; k < frame.bins; ++k)
     {
+        frame.mag[k] = std::sqrt(frame.re[k] * frame.re[k] + frame.im[k] * frame.im[k]);
+        frame.smoothMag[k] = std::atan2(frame.im[k], frame.re[k]);
+    }
+
+    for (size_t k = 0; k < frame.bins; ++k)
+    {
         const float src = static_cast<float>(k) * scale;
         if (src >= static_cast<float>(frame.bins - 1))
             continue;
         const size_t i0 = static_cast<size_t>(src);
         const size_t i1 = std::min(i0 + 1, frame.bins - 1);
         const float frac = src - static_cast<float>(i0);
-        const float re = frame.re[i0] + (frame.re[i1] - frame.re[i0]) * frac;
-        const float im = frame.im[i0] + (frame.im[i1] - frame.im[i0]) * frac;
-        frame.temp[k] = re;
-        frame.tempIm[k] = im;
+        const float mag = frame.mag[i0] + (frame.mag[i1] - frame.mag[i0]) * frac;
+        const float phase = frame.smoothMag[i0] + ShortestPhaseDelta(frame.smoothMag[i0], frame.smoothMag[i1]) * frac;
+        frame.temp[k] = mag * std::cos(phase);
+        frame.tempIm[k] = mag * std::sin(phase);
     }
 
     for (size_t k = 0; k < frame.bins; ++k)
@@ -216,14 +232,22 @@ void FoldProcessor::Process(SpectralFrame &frame, float vibe) const
 
     for (size_t k = 0; k < frame.bins; ++k)
     {
+        frame.mag[k] = std::sqrt(frame.re[k] * frame.re[k] + frame.im[k] * frame.im[k]);
+        frame.smoothMag[k] = std::atan2(frame.im[k], frame.re[k]);
+    }
+
+    for (size_t k = 0; k < frame.bins; ++k)
+    {
         const float src = std::fabs(static_cast<float>(k) - center);
         const float mapped = center - src;
         const float clamped = std::clamp(mapped, 0.0f, static_cast<float>(frame.bins - 1));
         const size_t i0 = static_cast<size_t>(clamped);
         const size_t i1 = std::min(i0 + 1, frame.bins - 1);
         const float frac = clamped - static_cast<float>(i0);
-        frame.temp[k] = frame.re[i0] + (frame.re[i1] - frame.re[i0]) * frac;
-        frame.tempIm[k] = frame.im[i0] + (frame.im[i1] - frame.im[i0]) * frac;
+        const float mag = frame.mag[i0] + (frame.mag[i1] - frame.mag[i0]) * frac;
+        const float phase = frame.smoothMag[i0] + ShortestPhaseDelta(frame.smoothMag[i0], frame.smoothMag[i1]) * frac;
+        frame.temp[k] = mag * std::cos(phase);
+        frame.tempIm[k] = mag * std::sin(phase);
     }
 
     for (size_t k = 0; k < frame.bins; ++k)
