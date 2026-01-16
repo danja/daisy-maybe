@@ -16,6 +16,8 @@ constexpr float kWetGain = 0.7f;
 constexpr float kSpecMagLimit = 256.0f;
 constexpr bool kEnableTimeSmoothing = false;
 constexpr float kTimeSmoothMaxScale = 3.0f;
+constexpr float kNormMinScale = 0.25f;
+constexpr float kNormMaxScale = 4.0f;
 
 void LimitSpectrum(float *re, float *im, size_t count)
 {
@@ -28,6 +30,32 @@ void LimitSpectrum(float *re, float *im, size_t count)
     if (maxMag <= kSpecMagLimit || maxMag < kEps)
         return;
     const float scale = kSpecMagLimit / maxMag;
+    for (size_t k = 0; k < count; ++k)
+    {
+        re[k] *= scale;
+        im[k] *= scale;
+    }
+}
+
+float ComputeMagRms(const float *re, const float *im, size_t count)
+{
+    double sum = 0.0;
+    for (size_t k = 0; k < count; ++k)
+    {
+        const float mag = std::sqrt(re[k] * re[k] + im[k] * im[k]);
+        sum += static_cast<double>(mag) * static_cast<double>(mag);
+    }
+    if (count == 0)
+        return 0.0f;
+    return std::sqrt(static_cast<float>(sum / static_cast<double>(count)));
+}
+
+void NormalizeSpectrum(float *re, float *im, size_t count, float targetRms)
+{
+    const float current = ComputeMagRms(re, im, count);
+    if (current < kEps || targetRms < kEps)
+        return;
+    const float scale = std::clamp(targetRms / current, kNormMinScale, kNormMaxScale);
     for (size_t k = 0; k < count; ++k)
     {
         re[k] *= scale;
@@ -103,6 +131,7 @@ void SpectralChannel::ProcessFrame(SpectralProcess process, float timeRatio, flo
     fft_.Execute(fftRe_, fftIm_, false);
 
     UnpackSpectrum();
+    const float preRms = ComputeMagRms(re_, im_, kNumBins);
     SpectralFrame frame;
     frame.bins = kNumBins;
     frame.re = re_;
@@ -118,6 +147,10 @@ void SpectralChannel::ProcessFrame(SpectralProcess process, float timeRatio, flo
     if (kEnableTimeSmoothing && process != SpectralProcess::Thru)
     {
         ApplyTimeSmoothing(timeRatio);
+    }
+    if (process != SpectralProcess::Thru)
+    {
+        NormalizeSpectrum(re_, im_, kNumBins, preRms);
     }
     LimitSpectrum(re_, im_, kNumBins);
     PackSpectrum();
