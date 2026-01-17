@@ -19,7 +19,7 @@ namespace
 
 constexpr float kMinTime = 0.125f;
 constexpr float kMaxTime = 32.0f;
-constexpr float kInputGain = 1.4f;
+constexpr float kInputGain = 1.2f;  // Balanced to prevent distortion while maintaining level
 constexpr float kOutputGain = 0.9f;
 constexpr float kWetTrim = 0.8f;
 constexpr float kPeakDecay = 0.95f;

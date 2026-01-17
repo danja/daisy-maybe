@@ -13,7 +13,7 @@ constexpr float kEps = 1.0e-9f;
 constexpr float kMinMag = 1.0e-6f;
 constexpr float kTwoPi = 2.0f * static_cast<float>(M_PI);
 constexpr float kWetGain = 0.7f;
-constexpr float kSpecMagLimit = 256.0f;
+constexpr float kSpecMagLimit = 2.0f;  // Adjusted for 1/N forward FFT scaling
 constexpr bool kEnableTimeSmoothing = false;
 constexpr float kTimeSmoothMaxScale = 3.0f;
 constexpr float kNormMinScale = 0.25f;
@@ -186,26 +186,11 @@ void SpectralChannel::ProcessFrame(SpectralProcess process,
 
     GetProcessor(static_cast<int>(process)).Process(frame, vibe);
 
-    if (process != SpectralProcess::Thru)
+    // Phase continuity (phase vocoder) for time-stretched effects
+    // Note: ApplyPhaseContinuity extracts mag/phase from re/im internally
+    if (phaseContinuity && process != SpectralProcess::Thru)
     {
-        if (process == SpectralProcess::Shift || process == SpectralProcess::Fold || process == SpectralProcess::Phase)
-        {
-            for (size_t k = 0; k < kNumBins; ++k)
-            {
-                phase_[k] = std::atan2(im_[k], re_[k]);
-            }
-        }
-        for (size_t k = 0; k < kNumBins; ++k)
-        {
-            const float phase = phase_[k];
-            const float amplitude = std::sqrt(re_[k] * re_[k] + im_[k] * im_[k]);
-            re_[k] = amplitude * std::cos(phase);
-            im_[k] = amplitude * std::sin(phase);
-        }
-        if (phaseContinuity)
-        {
-            ApplyPhaseContinuity();
-        }
+        ApplyPhaseContinuity();
     }
     if (kEnableTimeSmoothing && process != SpectralProcess::Thru)
     {

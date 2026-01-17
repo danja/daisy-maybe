@@ -213,7 +213,7 @@ void TiltProcessor::Process(SpectralFrame &frame, float vibe) const
     {
         const float pos = static_cast<float>(k) / static_cast<float>(frame.bins - 1);
         float gain = 1.0f + tilt * (pos - 0.5f) * 2.4f;
-        gain = std::clamp(gain, 0.05f, 6.0f);
+        gain = std::clamp(gain, 0.05f, 2.0f);  // Reduced from 6.0 to prevent distortion
         frame.re[k] *= gain;
         frame.im[k] *= gain;
     }

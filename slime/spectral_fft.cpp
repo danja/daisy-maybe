@@ -68,7 +68,9 @@ void SpectralFft::Execute(float *re, float *im, bool inverse)
         }
     }
 
-    if (inverse)
+    // Scale forward FFT by 1/N to normalize bin magnitudes
+    // Inverse FFT is not scaled, maintaining unity gain through FFT/IFFT pair
+    if (!inverse)
     {
         const float scale = 1.0f / static_cast<float>(kSpectralFftSize);
         for (size_t i = 0; i < kSpectralFftSize; ++i)
