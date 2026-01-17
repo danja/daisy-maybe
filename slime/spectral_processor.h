@@ -28,13 +28,30 @@ class SpectralChannel
     static constexpr size_t kNumBins = kSpectralNumBins;
 
     void Init(float sampleRate, const float *window);
+    void SetWindow(const float *window);
     float ProcessSample(float input,
                         SpectralProcess process,
                         float timeRatio,
-                        float vibe);
+                        float vibe,
+                        float preserve,
+                        float spectralGain,
+                        float ifftGain,
+                        float olaGain,
+                        bool  phaseContinuity,
+                        bool  normalizeSpectrum,
+                        bool  limitSpectrum);
 
   private:
-    void ProcessFrame(SpectralProcess process, float timeRatio, float vibe);
+    void ProcessFrame(SpectralProcess process,
+                      float timeRatio,
+                      float vibe,
+                      float preserve,
+                      float spectralGain,
+                      float ifftGain,
+                      float olaGain,
+                      bool  phaseContinuity,
+                      bool  normalizeSpectrum,
+                      bool  limitSpectrum);
     void UnpackSpectrum();
     void PackSpectrum();
     void ApplyPhaseContinuity();
@@ -50,8 +67,11 @@ class SpectralChannel
     float re_[kNumBins]{};
     float im_[kNumBins]{};
     float mag_[kNumBins]{};
+    float phase_[kNumBins]{};
     float temp_[kNumBins]{};
     float tempIm_[kNumBins]{};
+    float origRe_[kNumBins]{};
+    float origIm_[kNumBins]{};
     float smoothMag_[kNumBins]{};
     float freezeMag_[kNumBins]{};
     float prevPhase_[kNumBins]{};

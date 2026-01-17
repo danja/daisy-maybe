@@ -104,8 +104,30 @@ int main()
                     const float input = kInputAmp * std::sin(phase);
                     const float in1 = SoftClipInput(input * kInputGain);
                     const float in2 = SoftClipInput(input * kInputGain);
-                    const float wet1 = SoftClipInput(channel1.ProcessSample(in1, process, 1.0f, vibe)) * kWetTrim;
-                    const float wet2 = SoftClipInput(channel2.ProcessSample(in2, process, 1.0f, vibe)) * kWetTrim;
+                    const float wet1 = SoftClipInput(channel1.ProcessSample(in1,
+                                                                            process,
+                                                                            1.0f,
+                                                                            vibe,
+                                                                            0.0f,
+                                                                            1.0f,
+                                                                            1.0f,
+                                                                            1.0f,
+                                                                            true,
+                                                                            true,
+                                                                            true))
+                                       * kWetTrim;
+                    const float wet2 = SoftClipInput(channel2.ProcessSample(in2,
+                                                                            process,
+                                                                            1.0f,
+                                                                            vibe,
+                                                                            0.0f,
+                                                                            1.0f,
+                                                                            1.0f,
+                                                                            1.0f,
+                                                                            true,
+                                                                            true,
+                                                                            true))
+                                       * kWetTrim;
                     const float mix1 = (dryMix * in1 + wetMix * wet1) * kOutputGain;
                     const float mix2 = (dryMix * in2 + wetMix * wet2) * kOutputGain;
                     const float output = SoftClip(0.5f * (mix1 + mix2));

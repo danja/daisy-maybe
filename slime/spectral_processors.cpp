@@ -90,7 +90,7 @@ void ShiftProcessor::Process(SpectralFrame &frame, float vibe) const
     for (size_t k = 0; k < frame.bins; ++k)
     {
         frame.mag[k] = std::sqrt(frame.re[k] * frame.re[k] + frame.im[k] * frame.im[k]);
-        frame.smoothMag[k] = std::atan2(frame.im[k], frame.re[k]);
+        frame.phase[k] = std::atan2(frame.im[k], frame.re[k]);
     }
 
     for (size_t k = 0; k < frame.bins; ++k)
@@ -102,7 +102,7 @@ void ShiftProcessor::Process(SpectralFrame &frame, float vibe) const
         const size_t i1 = std::min(i0 + 1, frame.bins - 1);
         const float frac = src - static_cast<float>(i0);
         const float mag = frame.mag[i0] + (frame.mag[i1] - frame.mag[i0]) * frac;
-        const float phase = frame.smoothMag[i0] + ShortestPhaseDelta(frame.smoothMag[i0], frame.smoothMag[i1]) * frac;
+        const float phase = frame.phase[i0] + ShortestPhaseDelta(frame.phase[i0], frame.phase[i1]) * frac;
         frame.temp[k] = mag * std::cos(phase);
         frame.tempIm[k] = mag * std::sin(phase);
     }
@@ -233,7 +233,7 @@ void FoldProcessor::Process(SpectralFrame &frame, float vibe) const
     for (size_t k = 0; k < frame.bins; ++k)
     {
         frame.mag[k] = std::sqrt(frame.re[k] * frame.re[k] + frame.im[k] * frame.im[k]);
-        frame.smoothMag[k] = std::atan2(frame.im[k], frame.re[k]);
+        frame.phase[k] = std::atan2(frame.im[k], frame.re[k]);
     }
 
     for (size_t k = 0; k < frame.bins; ++k)
@@ -245,7 +245,7 @@ void FoldProcessor::Process(SpectralFrame &frame, float vibe) const
         const size_t i1 = std::min(i0 + 1, frame.bins - 1);
         const float frac = clamped - static_cast<float>(i0);
         const float mag = frame.mag[i0] + (frame.mag[i1] - frame.mag[i0]) * frac;
-        const float phase = frame.smoothMag[i0] + ShortestPhaseDelta(frame.smoothMag[i0], frame.smoothMag[i1]) * frac;
+        const float phase = frame.phase[i0] + ShortestPhaseDelta(frame.phase[i0], frame.phase[i1]) * frac;
         frame.temp[k] = mag * std::cos(phase);
         frame.tempIm[k] = mag * std::sin(phase);
     }

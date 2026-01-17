@@ -8,6 +8,7 @@ struct SpectralFrame
     float *re = nullptr;
     float *im = nullptr;
     float *mag = nullptr;
+    float *phase = nullptr;
     float *temp = nullptr;
     float *tempIm = nullptr;
     float *smoothMag = nullptr;

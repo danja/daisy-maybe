@@ -67,7 +67,6 @@ void NormalizeSpectrum(float *re, float *im, size_t count, float targetRms)
 void SpectralChannel::Init(float sampleRate, const float *window)
 {
     (void)sampleRate;
-    window_ = window;
     fft_.Init();
     std::fill(&outputRing_[0], &outputRing_[kOutputBufferSize], 0.0f);
     std::fill(&smoothMag_[0], &smoothMag_[kNumBins], 0.0f);
@@ -78,6 +77,14 @@ void SpectralChannel::Init(float sampleRate, const float *window)
     outputRead_ = 0;
     outputWrite_ = 0;
 
+    SetWindow(window);
+}
+
+void SpectralChannel::SetWindow(const float *window)
+{
+    window_ = window;
+    if (!window_)
+        return;
     const size_t overlap = kFftSize / kHopSize;
     for (size_t i = 0; i < kHopSize; ++i)
     {
@@ -95,7 +102,14 @@ void SpectralChannel::Init(float sampleRate, const float *window)
 float SpectralChannel::ProcessSample(float input,
                                      SpectralProcess process,
                                      float timeRatio,
-                                     float vibe)
+                                     float vibe,
+                                     float preserve,
+                                     float spectralGain,
+                                     float ifftGain,
+                                     float olaGain,
+                                     bool  phaseContinuity,
+                                     bool  normalizeSpectrum,
+                                     bool  limitSpectrum)
 {
     inputRing_[inputWrite_] = input;
     inputWrite_ = (inputWrite_ + 1) % kFftSize;
@@ -112,13 +126,31 @@ float SpectralChannel::ProcessSample(float input,
     if (hopCounter_ >= kHopSize)
     {
         hopCounter_ = 0;
-        ProcessFrame(process, timeRatio, vibe);
+        ProcessFrame(process,
+                     timeRatio,
+                     vibe,
+                     preserve,
+                     spectralGain,
+                     ifftGain,
+                     olaGain,
+                     phaseContinuity,
+                     normalizeSpectrum,
+                     limitSpectrum);
     }
 
     return output;
 }
 
-void SpectralChannel::ProcessFrame(SpectralProcess process, float timeRatio, float vibe)
+void SpectralChannel::ProcessFrame(SpectralProcess process,
+                                   float timeRatio,
+                                   float vibe,
+                                   float preserve,
+                                   float spectralGain,
+                                   float ifftGain,
+                                   float olaGain,
+                                   bool  phaseContinuity,
+                                   bool  normalizeSpectrum,
+                                   bool  limitSpectrum)
 {
     size_t source = inputWrite_;
     for (size_t i = 0; i < kFftSize; ++i)
@@ -134,13 +166,19 @@ void SpectralChannel::ProcessFrame(SpectralProcess process, float timeRatio, flo
     const float preRms = ComputeMagRms(re_, im_, kNumBins);
     for (size_t k = 0; k < kNumBins; ++k)
     {
-        mag_[k] = std::atan2(im_[k], re_[k]);
+        const float re = re_[k];
+        const float im = im_[k];
+        mag_[k] = std::sqrt(re * re + im * im);
+        phase_[k] = std::atan2(im, re);
+        origRe_[k] = re_[k];
+        origIm_[k] = im_[k];
     }
     SpectralFrame frame;
     frame.bins = kNumBins;
     frame.re = re_;
     frame.im = im_;
     frame.mag = mag_;
+    frame.phase = phase_;
     frame.temp = temp_;
     frame.tempIm = tempIm_;
     frame.smoothMag = smoothMag_;
@@ -150,14 +188,24 @@ void SpectralChannel::ProcessFrame(SpectralProcess process, float timeRatio, flo
 
     if (process != SpectralProcess::Thru)
     {
+        if (process == SpectralProcess::Shift || process == SpectralProcess::Fold || process == SpectralProcess::Phase)
+        {
+            for (size_t k = 0; k < kNumBins; ++k)
+            {
+                phase_[k] = std::atan2(im_[k], re_[k]);
+            }
+        }
         for (size_t k = 0; k < kNumBins; ++k)
         {
-            const float phase = mag_[k];
+            const float phase = phase_[k];
             const float amplitude = std::sqrt(re_[k] * re_[k] + im_[k] * im_[k]);
             re_[k] = amplitude * std::cos(phase);
             im_[k] = amplitude * std::sin(phase);
         }
-        ApplyPhaseContinuity();
+        if (phaseContinuity)
+        {
+            ApplyPhaseContinuity();
+        }
     }
     if (kEnableTimeSmoothing && process != SpectralProcess::Thru)
     {
@@ -165,19 +213,53 @@ void SpectralChannel::ProcessFrame(SpectralProcess process, float timeRatio, flo
     }
     if (process != SpectralProcess::Thru)
     {
-        NormalizeSpectrum(re_, im_, kNumBins, preRms);
+        if (normalizeSpectrum)
+        {
+            NormalizeSpectrum(re_, im_, kNumBins, preRms);
+        }
+        if (preserve > 0.0f)
+        {
+            const float keep = std::clamp(preserve, 0.0f, 1.0f);
+            const float mix = 1.0f - keep;
+            for (size_t k = 0; k < kNumBins; ++k)
+            {
+                re_[k] = re_[k] * mix + origRe_[k] * keep;
+                im_[k] = im_[k] * mix + origIm_[k] * keep;
+            }
+        }
     }
-    LimitSpectrum(re_, im_, kNumBins);
+    if (spectralGain != 1.0f)
+    {
+        const float gain = std::clamp(spectralGain, 0.0f, 4.0f);
+        for (size_t k = 0; k < kNumBins; ++k)
+        {
+            re_[k] *= gain;
+            im_[k] *= gain;
+        }
+    }
+    if (limitSpectrum)
+    {
+        LimitSpectrum(re_, im_, kNumBins);
+    }
     PackSpectrum();
 
     fft_.Execute(fftRe_, fftIm_, true);
+    if (ifftGain != 1.0f)
+    {
+        const float gain = std::clamp(ifftGain, 0.0f, 4.0f);
+        for (size_t i = 0; i < kFftSize; ++i)
+        {
+            fftRe_[i] *= gain;
+        }
+    }
 
     const size_t frameStart = outputWrite_;
     size_t destination = frameStart;
+    const float ola = std::clamp(olaGain, 0.0f, 4.0f);
     for (size_t i = 0; i < kFftSize; ++i)
     {
         const float norm = overlapInv_[(frameStart + i) % kHopSize];
-        const float sample = fftRe_[i] * window_[i] * norm * kWetGain;
+        const float sample = fftRe_[i] * window_[i] * norm * kWetGain * ola;
         outputRing_[destination] += sample;
         destination = (destination + 1) % kOutputBufferSize;
     }
