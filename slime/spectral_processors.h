@@ -19,70 +19,70 @@ class SpectralProcessor
 {
   public:
     virtual ~SpectralProcessor() = default;
-    virtual void Process(SpectralFrame &frame, float vibe) const = 0;
+    virtual void Process(SpectralFrame &frame, float time, float vibe) const = 0;
     virtual const char *Name() const = 0;
 };
 
 class ThruProcessor : public SpectralProcessor
 {
   public:
-    void Process(SpectralFrame &frame, float vibe) const override;
+    void Process(SpectralFrame &frame, float time, float vibe) const override;
     const char *Name() const override;
 };
 
 class SmearProcessor : public SpectralProcessor
 {
   public:
-    void Process(SpectralFrame &frame, float vibe) const override;
+    void Process(SpectralFrame &frame, float time, float vibe) const override;
     const char *Name() const override;
 };
 
 class ShiftProcessor : public SpectralProcessor
 {
   public:
-    void Process(SpectralFrame &frame, float vibe) const override;
+    void Process(SpectralFrame &frame, float time, float vibe) const override;
     const char *Name() const override;
 };
 
 class CombProcessor : public SpectralProcessor
 {
   public:
-    void Process(SpectralFrame &frame, float vibe) const override;
+    void Process(SpectralFrame &frame, float time, float vibe) const override;
     const char *Name() const override;
 };
 
 class FreezeProcessor : public SpectralProcessor
 {
   public:
-    void Process(SpectralFrame &frame, float vibe) const override;
+    void Process(SpectralFrame &frame, float time, float vibe) const override;
     const char *Name() const override;
 };
 
 class GateProcessor : public SpectralProcessor
 {
   public:
-    void Process(SpectralFrame &frame, float vibe) const override;
+    void Process(SpectralFrame &frame, float time, float vibe) const override;
     const char *Name() const override;
 };
 
 class TiltProcessor : public SpectralProcessor
 {
   public:
-    void Process(SpectralFrame &frame, float vibe) const override;
+    void Process(SpectralFrame &frame, float time, float vibe) const override;
     const char *Name() const override;
 };
 
 class FoldProcessor : public SpectralProcessor
 {
   public:
-    void Process(SpectralFrame &frame, float vibe) const override;
+    void Process(SpectralFrame &frame, float time, float vibe) const override;
     const char *Name() const override;
 };
 
 class PhaseProcessor : public SpectralProcessor
 {
   public:
-    void Process(SpectralFrame &frame, float vibe) const override;
+    void Process(SpectralFrame &frame, float time, float vibe) const override;
     const char *Name() const override;
 };
 

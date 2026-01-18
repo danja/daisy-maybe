@@ -184,7 +184,7 @@ void SpectralChannel::ProcessFrame(SpectralProcess process,
     frame.smoothMag = smoothMag_;
     frame.freezeMag = freezeMag_;
 
-    GetProcessor(static_cast<int>(process)).Process(frame, vibe);
+    GetProcessor(static_cast<int>(process)).Process(frame, timeRatio, vibe);
 
     // Phase continuity (phase vocoder) for time-stretched effects
     // Note: ApplyPhaseContinuity extracts mag/phase from re/im internally
@@ -321,8 +321,8 @@ void SpectralChannel::ApplyPhaseContinuity()
 
 void SpectralChannel::ApplyTimeSmoothing(float timeRatio)
 {
-    const float clamped = std::clamp(timeRatio, 0.125f, 32.0f);
-    const float alpha = std::clamp(1.0f / clamped, 0.01f, 1.0f);
+    const float clamped = std::clamp(timeRatio, 0.01f, 5.0f);
+    const float alpha = std::clamp(0.00533f / clamped, 0.0005f, 0.95f);
     for (size_t k = 0; k < kNumBins; ++k)
     {
         const float mag = std::sqrt(re_[k] * re_[k] + im_[k] * im_[k]);

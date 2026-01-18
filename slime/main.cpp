@@ -17,8 +17,8 @@ namespace
 #define M_PI 3.14159265358979323846f
 #endif
 
-constexpr float kMinTime = 0.125f;
-constexpr float kMaxTime = 32.0f;
+constexpr float kMinTime = 0.01f;   // 10ms - very fast response
+constexpr float kMaxTime = 5.0f;    // 5s - very slow/sustained
 constexpr float kInputGain = 1.2f;  // Balanced to prevent distortion while maintaining level
 constexpr float kOutputGain = 0.9f;
 constexpr float kWetTrim = 0.8f;
@@ -190,7 +190,7 @@ void UpdateControls()
             break;
         }
         case 1:
-            timeRatio = std::clamp(timeRatio + inc * 0.05f, 0.125f, 8.0f);
+            timeRatio = std::clamp(timeRatio + inc * 0.05f, 0.1f, 10.0f);
             break;
         case 2:
             mix = std::clamp(mix + inc * 0.02f, 0.0f, 1.0f);
@@ -266,7 +266,11 @@ void UpdateAnalogControls()
     const float cv2Bipolar = (cv2 - 0.5f) * 2.0f;
     const float timeControl = std::clamp(0.5f + 0.5f * (pot1Bipolar + cv1Bipolar), 0.0f, 1.0f);
     const float vibeControl = std::clamp(0.5f + 0.5f * (pot2Bipolar + cv2Bipolar), 0.0f, 1.0f);
-    timeBase = MapExpo(timeControl, kMinTime, kMaxTime);
+
+    // Apply square curve to emphasize shorter time values (most musically useful range)
+    // At 50% knob: timeControl^2 = 0.25 → gives ~50ms instead of ~224ms
+    const float timeCurved = timeControl * timeControl;
+    timeBase = MapExpo(timeCurved, kMinTime, kMaxTime);
     vibe = vibeControl;
 }
 
