@@ -5,6 +5,7 @@ TARGET = resonators
 CPP_SOURCES = main.cpp \
 display.cpp \
 encoder_handler.cpp \
+menu_system.cpp \
 $(BLUEMCHEN_DIR)/src/kxmx_bluemchen.cpp
 
 # Library Locations

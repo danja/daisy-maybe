@@ -4,7 +4,7 @@ Guide to the dual-resonator delay firmware for kxmx_bluemchen.
 
 ## Overview
 
-This firmware turns the module into a pair of tuned delay-line resonators. Each channel takes its own audio input and output, with delay lengths set so the resonant pitch tracks 1V/oct via CV 1. Cross-feedback, input injection position, damping, and wet/dry mix are available from the encoder menu.
+This firmware turns the module into a pair of tuned delay-line resonators with an input wavefolder/overdrive stage and filtered feed routing. Each channel takes its own audio input and output, with delay lengths set so the resonant pitch tracks 1V/oct via CV 1. The menu provides master mix and feed routing, distortion controls, and per-resonator ratio and damping.
 
 ### Key Specifications
 
@@ -56,23 +56,31 @@ This firmware turns the module into a pair of tuned delay-line resonators. Each 
 | Control | Function | Range | Notes |
 |---------|----------|-------|-------|
 | Knob 1 | Base pitch | ~10 Hz - 8 kHz | Exponential mapping |
-| CV 1 | V/Oct pitch | 5 octaves | Bipolar around knob center |
-| Knob 2 | Resonator 2 offset | -4 to +4 octaves | Bipolar offset around knob center |
-| CV 2 | Resonator 2 offset mod | -4 to +4 octaves | Bipolar modulation |
-| Encoder rotate | Menu value | Depends on page | See menu below |
-| Encoder short press | Page select | CAL → FB → X12 → X21 → INP → DAMP → MIX | Cycles pages |
+| CV 1 | V/Oct pitch | 5 octaves | Unipolar, scaled by calibration |
+| Knob 2 | Wavefolder depth | 0.0 - 1.0 | Base fold depth |
+| CV 2 | Wavefolder depth mod | 0.0 - 1.0 | Adds to Knob 2 depth |
+| Encoder rotate | Menu value | Depends on item | See menu below |
+| Encoder short press | Item select | Title → item list | Scrolls within a page |
+| Encoder long press | Toggle CAL | CAL ↔ menu | CAL enters calibration tone |
 
 ## Menu Pages
 
-The top-right label shows the active page:
+The top line shows the current page title. When the title line is selected, rotating the encoder switches pages.
 
-- **CAL**: Calibration mode (scale + offset).
-- **FB**: Feedback amount for both delay lines.
-- **X12**: Feedback from resonator 1 into resonator 2.
-- **X21**: Feedback from resonator 2 into resonator 1.
-- **INP**: Input injection position in each delay line.
-- **DAMP**: Feedback damping (lowpass).
-- **MIX**: Wet/dry mix per output.
+- **Master**
+  - `DMIX`: Dry/wet mix between the direct input and the wavefolder/overdrive stage.
+  - `RMIX`: Resonator wet/dry mix at the output.
+  - `FXX`: Resonator X to X feed via filter.
+  - `FYY`: Resonator Y to Y feed via filter.
+  - `FXY`: Resonator X to Y feed via filter.
+  - `FYX`: Resonator Y to X feed via filter.
+- **Dist**
+  - `FOLD`: Number of wavefolds (1–5).
+  - `ODRV`: Overdrive amount (soft to hard clipping).
+- **Res**
+  - `RAT`: Resonator Y ratio vs X delay time (0.25–4.0).
+  - `DMX`: Damping for resonator X feed filter.
+  - `DMY`: Damping for resonator Y feed filter.
 
 ## Calibration Mode (CAL)
 
@@ -83,37 +91,26 @@ Use CAL to fine-tune pitch tracking. While in CAL, the module outputs a 440 Hz s
 
 Settings are saved to flash automatically after about one second of inactivity.
 
-## Feedback and Cross-Feedback
+## Feed Routing
 
-- **FB** sets the internal feedback gain for each resonator.
-- **X12** and **X21** add cross-feedback between the two resonators for stereo interactions and coupled resonances.
+The feed paths are filtered and summed before the wavefolder/overdrive stage. This keeps the feedback tone consistent even when distortion is pushed.
 
-Tip: use high FB with low cross values for stable resonant tones; push X12/X21 for chaotic, evolving textures.
+Tip: use higher `FXX` for strong single-resonator tones; add `FXY`/`FYX` for stereo interplay and coupled resonances.
 
-## Input Position (INP)
+## Damping
 
-INP controls where the input signal is injected inside each delay line, from the input tap to deeper inside the buffer.
+`DMX` and `DMY` apply lowpass filters to the feed paths.
 
-- Low values = traditional input at the head (more predictable). At 0, input is mixed directly into the delay write.
-- Higher values = darker, more complex resonances
+- Low damping = brighter, longer resonance
+- High damping = darker, shorter resonance
 
-## Damping (DAMP)
+## Mixes
 
-DAMP applies a lowpass filter to the feedback path.
-
-- Low DAMP = brighter, longer resonance
-- High DAMP = darker, shorter resonance
-
-## Mix (MIX)
-
-Sets dry/wet output balance for both channels.
-
-- 0.0 = dry input
-- 1.0 = full resonator output
+`WMIX` sets how much wavefolder/overdrive is blended into the resonator input. `RMIX` sets the resonator wet/dry output balance.
 
 ## Tips
 
 - Patch noise or short percussive hits to excite the resonators.
-- Tune resonator 2 a fifth or octave above resonator 1 for stable intervals.
-- Cross-feedback can create stereo “chorus” effects when lightly applied.
+- Use `RAT` for musical intervals (0.5 = octave down, 2.0 = octave up).
+- Cross-feed (`FXY`/`FYX`) can create stereo “chorus” effects when lightly applied.
 - Use CAL before serious tracking work, especially if CV source is not perfectly scaled.

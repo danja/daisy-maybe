@@ -4,11 +4,6 @@
 
 using namespace kxmx;
 
-namespace
-{
-    constexpr float kCalibTone = 440.0f;
-}
-
 void RenderDisplay(Bluemchen &hw, const DisplayData &data)
 {
     hw.display.Fill(false);
@@ -16,7 +11,17 @@ void RenderDisplay(Bluemchen &hw, const DisplayData &data)
     char buf[32];
 
     hw.display.SetCursor(0, 0);
-    snprintf(buf, sizeof(buf), "Res %s%c", data.menuLabel, data.heartbeatOn ? '.' : ' ');
+    if (data.isCalib)
+    {
+        snprintf(buf, sizeof(buf), "Res CAL%c", data.heartbeatOn ? '.' : ' ');
+    }
+    else
+    {
+        snprintf(buf, sizeof(buf), "%c%s%c",
+                 data.titleSelected ? '*' : ' ',
+                 data.pageTitle,
+                 data.heartbeatOn ? '.' : ' ');
+    }
     hw.display.WriteString(buf, Font_6x8, true);
 
     if (data.showSaveConfirm)
@@ -40,54 +45,44 @@ void RenderDisplay(Bluemchen &hw, const DisplayData &data)
         hw.display.SetCursor(0, 16);
         hw.display.WriteString(buf, Font_6x8, true);
 
-        snprintf(buf, sizeof(buf), "Pg%d I%d", data.menuIndex, data.encoderSteps);
+        snprintf(buf, sizeof(buf), "Hz%4d", static_cast<int>(data.currentFreq + 0.5f));
         hw.display.SetCursor(0, 24);
         hw.display.WriteString(buf, Font_6x8, true);
     }
     else
     {
-        const int f1 = static_cast<int>(data.currentFreq + 0.5f);
-        const int f2 = static_cast<int>(data.currentFreq2 + 0.5f);
-        snprintf(buf, sizeof(buf), "F1%4d", f1);
-        hw.display.SetCursor(0, 8);
-        hw.display.WriteString(buf, Font_6x8, true);
-
-        snprintf(buf, sizeof(buf), "F2%4d", f2);
-        hw.display.SetCursor(0, 16);
-        hw.display.WriteString(buf, Font_6x8, true);
-
-        switch (data.menuLabel[0])
+        for (int i = 0; i < data.lineCount; ++i)
         {
-        case 'F': // FB
-            snprintf(buf, sizeof(buf), "FB%3d", static_cast<int>(data.feedback * 100.0f + 0.5f));
-            break;
-        case 'X': // X12/X21
-            if (data.menuLabel[1] == '1')
-                snprintf(buf, sizeof(buf), "X12%2d", static_cast<int>(data.cross12 * 100.0f + 0.5f));
-            else
-                snprintf(buf, sizeof(buf), "X21%2d", static_cast<int>(data.cross21 * 100.0f + 0.5f));
-            break;
-        case 'I': // INP
-            snprintf(buf, sizeof(buf), "IN%3d", static_cast<int>(data.inputPos * 100.0f + 0.5f));
-            break;
-        case 'R': // RED
-            if (data.menuLabel[1] == 'B')
-                snprintf(buf, sizeof(buf), "RB%3d", static_cast<int>(data.reedBias * 100.0f + 0.5f));
-            else
-                snprintf(buf, sizeof(buf), "RD%3d", static_cast<int>(data.reedAmount * 100.0f + 0.5f));
-            break;
-        case 'D': // DAMP
-            snprintf(buf, sizeof(buf), "DP%3d", static_cast<int>(data.damp * 100.0f + 0.5f));
-            break;
-        case 'M': // MIX
-            snprintf(buf, sizeof(buf), "MX%3d", static_cast<int>(data.mix * 100.0f + 0.5f));
-            break;
-        default:
-            snprintf(buf, sizeof(buf), "FB%3d", static_cast<int>(data.feedback * 100.0f + 0.5f));
-            break;
+            const MenuLine &line = data.lines[i];
+            const int row = 8 + i * 8;
+            switch (line.type)
+            {
+            case MenuItemType::Percent:
+                snprintf(buf, sizeof(buf), "%c%-4s %3d",
+                         line.selected ? '*' : ' ',
+                         line.label,
+                         static_cast<int>(line.value * 100.0f + 0.5f));
+                break;
+            case MenuItemType::Ratio:
+            {
+                const int ratioCents = static_cast<int>(line.value * 100.0f + 0.5f);
+                snprintf(buf, sizeof(buf), "%c%-4s %d.%02d",
+                         line.selected ? '*' : ' ',
+                         line.label,
+                         ratioCents / 100,
+                         ratioCents % 100);
+                break;
+            }
+            case MenuItemType::Int:
+                snprintf(buf, sizeof(buf), "%c%-4s %2d",
+                         line.selected ? '*' : ' ',
+                         line.label,
+                         line.intValue);
+                break;
+            }
+            hw.display.SetCursor(0, row);
+            hw.display.WriteString(buf, Font_6x8, true);
         }
-        hw.display.SetCursor(0, 24);
-        hw.display.WriteString(buf, Font_6x8, true);
     }
     hw.display.Update();
 }

@@ -5,11 +5,7 @@
 using namespace kxmx;
 using namespace daisy;
 
-void UpdateEncoder(Bluemchen &hw,
-                   EncoderState &state,
-                   int numPages,
-                   int &menuPageIndex,
-                   bool &encoderLongPress)
+EncoderPress UpdateEncoder(Bluemchen &hw, EncoderState &state)
 {
     if (hw.encoder.RisingEdge())
     {
@@ -20,11 +16,9 @@ void UpdateEncoder(Bluemchen &hw,
         const uint32_t pressDuration = System::GetNow() - state.pressTimeMs;
         if (pressDuration > 500)
         {
-            encoderLongPress = !encoderLongPress;
+            return EncoderPress::Long;
         }
-        else
-        {
-            menuPageIndex = (menuPageIndex + 1) % numPages;
-        }
+        return EncoderPress::Short;
     }
+    return EncoderPress::None;
 }

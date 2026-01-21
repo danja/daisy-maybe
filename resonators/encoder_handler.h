@@ -8,8 +8,11 @@ struct EncoderState
     uint32_t pressTimeMs = 0;
 };
 
-void UpdateEncoder(kxmx::Bluemchen &hw,
-                   EncoderState &state,
-                   int numPages,
-                   int &menuPageIndex,
-                   bool &encoderLongPress);
+enum class EncoderPress
+{
+    None,
+    Short,
+    Long,
+};
+
+EncoderPress UpdateEncoder(kxmx::Bluemchen &hw, EncoderState &state);

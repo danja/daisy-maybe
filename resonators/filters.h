@@ -1,31 +1,35 @@
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 
 #include "daisysp.h"
 
-struct FeedbackFilters
+struct FeedFilters
 {
-    daisysp::OnePole fb1;
-    daisysp::OnePole fb2;
+    daisysp::OnePole x;
+    daisysp::OnePole y;
 
     void Init()
     {
-        fb1.Init();
-        fb2.Init();
+        x.Init();
+        y.Init();
     }
 
-    void SetDamp(float damp)
+    void SetDampX(float damp) { x.SetFrequency(MapCutoff(damp)); }
+    void SetDampY(float damp) { y.SetFrequency(MapCutoff(damp)); }
+
+    float ProcessX(float v) { return x.Process(v); }
+    float ProcessY(float v) { return y.Process(v); }
+
+  private:
+    static float MapCutoff(float damp)
     {
         const float minCut = 50.0f;
-        const float maxCut = 2500.0f;
-        const float cutoff = minCut + (1.0f - damp) * (maxCut - minCut);
-        fb1.SetFrequency(cutoff);
-        fb2.SetFrequency(cutoff);
+        const float maxCut = 4000.0f;
+        const float clamped = std::clamp(damp, 0.0f, 1.0f);
+        return minCut + (1.0f - clamped) * (maxCut - minCut);
     }
-
-    float Process1(float v) { return fb1.Process(v); }
-    float Process2(float v) { return fb2.Process(v); }
 };
 
 inline float SoftClipSample(float x)
