@@ -1,14 +1,15 @@
 # kxmx_bluemchen Firmware Collection
 
-A set of firmwares for the [kxmx_bluemchen](https://kxmx-bluemchen.recursinging.com/) Eurorack module, including DSF synthesis, dual resonators, and the Slime spectral processor.
+A set of firmwares for the [kxmx_bluemchen](https://kxmx-bluemchen.recursinging.com/) Eurorack module, including DSF synthesis, dual resonators, and spectral processors (Slime, Uzi).
 
 See also [Flues synth experiments](https://github.com/danja/flues) and [disyn-esp32](https://github.com/danja/disyn-esp32)
 
 ## Projects
 
-- **daisy-dsf**: Discrete Summation Formula (DSF) synthesizer porting algorithms from the disyn browser synth project.
-- **resonators**: Dual delay‑line resonators with 1V/oct tracking, cross‑feedback, damping, calibration, and bipolar knob/CV offsets.
-- **slime**: Stereo FFT spectral processor with time smear, multiple spectral effects, debug pages, and bipolar knob/CV control.
+- **daisy-dsf**  *(not great)*: Discrete Summation Formula (DSF) synthesizer porting algorithms from the disyn browser synth project.
+- **resonators** *(awesome)*: Dual delay‑line resonators with 1V/oct tracking, wavefolding, cross‑feedback, damping, calibration, and bipolar knob/CV offsets. 
+- **slime** *(poor)*: Stereo FFT spectral processor with time smear, multiple spectral effects, debug pages, and bipolar knob/CV control. 
+- **uzi**: Stereo spectral phaser with distortion front-end, spectral notching, crossover, and LFO modulation.
 
 **Status 2026-01-15 :** all three have been tested on hardware and work a treat. There are rough edges - the material shown on display could be tidied up a lot and various parameters could be tweaked. But the are good enough for my rack.
 
@@ -184,6 +185,7 @@ For detailed operation instructions, see [docs/dsf-manual.md](docs/dsf-manual.md
 Additional docs:
 - [docs/resonators-manual.md](docs/resonators-manual.md)
 - [docs/slime-manual.md](docs/slime-manual.md)
+- [docs/uzi-manual.md](docs/uzi-manual.md)
 - [docs/dependencies.md](docs/dependencies.md)
 
 ### Quick Start
