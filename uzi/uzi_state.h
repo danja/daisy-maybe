@@ -3,9 +3,11 @@
 struct UziState
 {
     float mix = 1.0f;
+    float feedback = 0.0f;
     float xmix = 0.0f;
     float lfoDepth = 0.0f;
     float lfoFreq = 0.2f;
+    float cutoffHz = 100.0f;
 
     float wave = 0.0f;
     float overdrive = 0.0f;
@@ -22,9 +24,11 @@ struct UziState
 struct UziRuntime
 {
     float mix = 1.0f;
+    float feedback = 0.0f;
     float xmix = 0.0f;
     float lfoDepth = 0.0f;
     float lfoFreq = 0.2f;
+    float cutoffHz = 100.0f;
 
     float wave = 0.0f;
     float overdrive = 0.0f;

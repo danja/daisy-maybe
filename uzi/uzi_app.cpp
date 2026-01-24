@@ -23,7 +23,7 @@ void UziApp::Update()
     hw_.ProcessDigitalControls();
 
     params_.Update(hw_, state_, runtime_);
-    ui_.Update(hw_);
+    ui_.Update(hw_, state_);
 
     const uint32_t now = daisy::System::GetNow();
     if (now - lastHeartbeatMs_ > 250)

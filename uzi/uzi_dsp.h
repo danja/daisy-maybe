@@ -17,6 +17,8 @@ public:
 private:
     float sampleRate_ = 48000.0f;
     float lfoPhase_ = 0.0f;
+    float feedbackL_ = 0.0f;
+    float feedbackR_ = 0.0f;
     DistortionChannel distortionLeft_{};
     DistortionChannel distortionRight_{};
     UziSpectralStereo spectral_{};

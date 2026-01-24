@@ -35,9 +35,11 @@ void UziParams::Update(kxmx::Bluemchen &hw, const UziState &state, UziRuntime &r
     const float phaseControl = std::clamp(0.5f + 0.5f * (pot2Bipolar + cv2Bipolar), 0.0f, 1.0f);
 
     runtime.mix = state.mix;
+    runtime.feedback = state.feedback;
     runtime.xmix = state.xmix;
     runtime.lfoDepth = state.lfoDepth;
     runtime.lfoFreq = state.lfoFreq;
+    runtime.cutoffHz = state.cutoffHz;
     runtime.wave = state.wave;
     runtime.overdrive = state.overdrive;
     runtime.crossover = state.crossover;
@@ -45,6 +47,6 @@ void UziParams::Update(kxmx::Bluemchen &hw, const UziState &state, UziRuntime &r
     runtime.binRounding = state.binRounding;
     runtime.blockSize = std::clamp(state.blockSize, 0, 2);
 
-    runtime.notchDistance = MapExpo(notchControl, kNotchMin, kNotchMax) * 2.0f;
-    runtime.phaseOffset = (phaseControl * 2.0f - 1.0f) * 4.0f;
+    runtime.notchDistance = MapExpo(notchControl, kNotchMin, kNotchMax) * 4.0f;
+    runtime.phaseOffset = (phaseControl * 2.0f - 1.0f) * 8.0f;
 }

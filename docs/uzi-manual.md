@@ -23,7 +23,9 @@ Low-end content under ~250 Hz is preserved.
 
 ### Master
 - **MIX**: Dry/wet balance.
+- **FBK**: Feedback amount (spectral loopback).
 - **X**: Cross-pollinate spectral magnitude/phase between channels.
+- **CUT**: Low-end passthrough cutoff (0-300 Hz).
 - **LFD**: LFO depth (modulates spectral phase offset).
 - **LFR**: LFO frequency.
 

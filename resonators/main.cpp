@@ -163,7 +163,8 @@ void UpdateControls()
         const float pitchMultiplier = powf(2.0f, pitchOffset + cvOct);
         currentFreq = std::clamp(baseFreq * pitchMultiplier, kMinFreq, kMaxFreq);
         currentFreq2 = std::clamp(currentFreq * resonatorParams.ratio, kMinFreq, kMaxFreq);
-        waveDepth = std::clamp(pot2 + (cv2 - 0.5f), 0.0f, 1.0f);
+        const float waveControl = std::clamp((pot2 - 0.5f) * 2.0f + (cv2 - 0.5f) * 2.0f, -1.0f, 1.0f);
+        waveDepth = std::clamp(0.5f + waveControl * 0.8f, 0.0f, 1.0f);
     }
 
     const int encInc = hw.encoder.Increment();
@@ -258,7 +259,8 @@ void AudioCallback(AudioHandle::InputBuffer in,
     const float feedXY = masterParams.feedXY;
     const float feedYX = masterParams.feedYX;
 
-    DistortionSettings distSettings{waveDepth, distortionParams.folds, distortionParams.overdrive};
+    const float waveDrive = std::clamp(distortionParams.overdrive + waveDepth * 0.8f, 0.0f, 1.0f);
+    DistortionSettings distSettings{waveDepth, distortionParams.folds, waveDrive};
 
     float inPeakX = 0.0f;
     float inPeakY = 0.0f;

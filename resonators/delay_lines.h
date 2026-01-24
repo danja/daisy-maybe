@@ -8,7 +8,7 @@ constexpr size_t kMaxDelaySamples = 48000;
 template <size_t max_size>
 class DelayBuffer
 {
-  public:
+public:
     void Init()
     {
         Reset();
@@ -16,7 +16,7 @@ class DelayBuffer
 
     void Reset()
     {
-        for(size_t i = 0; i < max_size; ++i)
+        for (size_t i = 0; i < max_size; ++i)
         {
             line_[i] = 0.0f;
         }
@@ -31,7 +31,7 @@ class DelayBuffer
     float Read() const
     {
         const int32_t delay_integral = static_cast<int32_t>(delay_);
-        const float   delay_fractional = delay_ - static_cast<float>(delay_integral);
+        const float delay_fractional = delay_ - static_cast<float>(delay_integral);
         const float a = line_[(write_ptr_ + delay_integral) % max_size];
         const float b = line_[(write_ptr_ + delay_integral + 1) % max_size];
         return a + (b - a) * delay_fractional;
@@ -54,10 +54,10 @@ class DelayBuffer
         line_[idx2] += sample * delay_fractional;
     }
 
-  private:
-    float  line_[max_size];
+private:
+    float line_[max_size];
     size_t write_ptr_ = 0;
-    float  delay_ = 1.0f;
+    float delay_ = 1.0f;
 };
 
 struct DelayLinePair

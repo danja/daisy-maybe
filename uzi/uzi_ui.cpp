@@ -2,12 +2,17 @@
 
 #include "daisy_seed.h"
 
+#include <algorithm>
+
 void UziUi::Init(kxmx::Bluemchen &hw, UziState &state)
 {
+    cutoffHzInt_ = static_cast<int>(state.cutoffHz + 0.5f);
     masterItems_[0] = {"MIX", MenuItemType::Percent, &state.mix, nullptr, 0.0f, 1.0f, 0.02f};
-    masterItems_[1] = {"X", MenuItemType::Percent, &state.xmix, nullptr, 0.0f, 1.0f, 0.02f};
-    masterItems_[2] = {"LFD", MenuItemType::Percent, &state.lfoDepth, nullptr, 0.0f, 1.0f, 0.02f};
-    masterItems_[3] = {"LFR", MenuItemType::Percent, &state.lfoFreq, nullptr, 0.0f, 1.0f, 0.02f};
+    masterItems_[1] = {"FBK", MenuItemType::Percent, &state.feedback, nullptr, 0.0f, 1.0f, 0.02f};
+    masterItems_[2] = {"X", MenuItemType::Percent, &state.xmix, nullptr, 0.0f, 1.0f, 0.02f};
+    masterItems_[3] = {"CUT", MenuItemType::Int, nullptr, &cutoffHzInt_, 0.0f, 300.0f, 20.0f};
+    masterItems_[4] = {"LFD", MenuItemType::Percent, &state.lfoDepth, nullptr, 0.0f, 1.0f, 0.02f};
+    masterItems_[5] = {"LFR", MenuItemType::Percent, &state.lfoFreq, nullptr, 0.0f, 1.0f, 0.02f};
 
     distortionItems_[0] = {"WAVE", MenuItemType::Percent, &state.wave, nullptr, 0.0f, 1.0f, 0.02f};
     distortionItems_[1] = {"ODRV", MenuItemType::Percent, &state.overdrive, nullptr, 0.0f, 1.0f, 0.02f};
@@ -27,7 +32,7 @@ void UziUi::Init(kxmx::Bluemchen &hw, UziState &state)
     (void)hw;
 }
 
-void UziUi::Update(kxmx::Bluemchen &hw)
+void UziUi::Update(kxmx::Bluemchen &hw, UziState &state)
 {
     const int encInc = hw.encoder.Increment();
     const EncoderPress press = UpdateEncoder(hw, encoderState_);
@@ -41,6 +46,8 @@ void UziUi::Update(kxmx::Bluemchen &hw)
     {
         MenuRotate(menuState_, encInc, pages_, sizeof(pages_) / sizeof(pages_[0]));
     }
+
+    state.cutoffHz = std::clamp(static_cast<float>(cutoffHzInt_), 0.0f, 300.0f);
 }
 
 void UziUi::RenderIfNeeded(kxmx::Bluemchen &hw, const UziState &state, const UziRuntime &runtime, bool heartbeatOn, uint32_t nowMs)

@@ -57,7 +57,7 @@ void UziSpectralStereo::Init(float sampleRate)
     fft_.Init();
     BuildHannWindow();
 
-    cutoffBin_ = static_cast<size_t>((250.0f * static_cast<float>(kFftSize)) / sampleRate_ + 0.5f);
+    cutoffBin_ = static_cast<size_t>((100.0f * static_cast<float>(kFftSize)) / sampleRate_ + 0.5f);
     cutoffBin_ = std::min(cutoffBin_, kNumBins - 1);
 
     SetHopSize(hopSize_);
@@ -168,13 +168,17 @@ void UziSpectralStereo::ProcessFrame(const UziRuntime &runtime, float lfoValue)
     }
 
     const float spacing = std::max(1.0f, runtime.notchDistance * 240.0f);
-    const float phaseShift = (runtime.phaseOffset + lfoValue * runtime.lfoDepth * 2.0f) * spacing;
+    const float phaseShift = (runtime.phaseOffset + lfoValue * runtime.lfoDepth * 4.0f) * spacing;
     const int roundBins = 1 + static_cast<int>(runtime.binRounding * 24.0f);
     const float sigma = std::clamp(0.3f + runtime.blur * (spacing * 0.7f), 0.3f, spacing);
 
+    const float cutoffHz = std::clamp(runtime.cutoffHz, 0.0f, 300.0f);
+    size_t cutoffBin = static_cast<size_t>((cutoffHz * static_cast<float>(kFftSize)) / sampleRate_ + 0.5f);
+    cutoffBin = std::min(cutoffBin, kNumBins - 1);
+
     for (size_t k = 0; k < kNumBins; ++k)
     {
-        if (k <= cutoffBin_)
+        if (k <= cutoffBin)
         {
             re_[0][k] = origRe_[0][k];
             im_[0][k] = origIm_[0][k];
@@ -202,7 +206,7 @@ void UziSpectralStereo::ProcessFrame(const UziRuntime &runtime, float lfoValue)
     const float xmix = Clamp01(runtime.xmix);
     if (xmix > 0.0f)
     {
-        for (size_t k = cutoffBin_ + 1; k < kNumBins; ++k)
+        for (size_t k = cutoffBin + 1; k < kNumBins; ++k)
         {
             const float reL = re_[0][k];
             const float imL = im_[0][k];
@@ -229,7 +233,7 @@ void UziSpectralStereo::ProcessFrame(const UziRuntime &runtime, float lfoValue)
     const float crossover = Clamp01(runtime.crossover);
     if (crossover > 0.0f)
     {
-        for (size_t k = cutoffBin_ + 1; k < kNumBins; ++k)
+        for (size_t k = cutoffBin + 1; k < kNumBins; ++k)
         {
             const float reL = re_[0][k];
             const float imL = im_[0][k];

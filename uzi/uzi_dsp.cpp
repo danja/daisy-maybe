@@ -15,6 +15,8 @@ void UziDsp::Init(float sampleRate)
     distortionRight_.Reset();
     spectral_.Init(sampleRate_);
     lfoPhase_ = 0.0f;
+    feedbackL_ = 0.0f;
+    feedbackR_ = 0.0f;
 }
 
 void UziDsp::Process(daisy::AudioHandle::InputBuffer in,
@@ -53,13 +55,17 @@ void UziDsp::Process(daisy::AudioHandle::InputBuffer in,
     const float lfoHz = 0.05f + runtime.lfoFreq * 5.0f;
     const float lfoInc = kTwoPi * lfoHz / sampleRate_;
 
+    const float feedback = std::clamp(runtime.feedback, 0.0f, 0.95f);
     for (size_t i = 0; i < size; ++i)
     {
         const float dryL = in[0][i];
         const float dryR = in[1][i];
 
-        const float distortedL = distortionLeft_.ProcessSample(dryL, settings, inPeakL, outPeakL);
-        const float distortedR = distortionRight_.ProcessSample(dryR, settings, inPeakR, outPeakR);
+        const float inputL = std::clamp(dryL + feedbackL_ * feedback, -1.2f, 1.2f);
+        const float inputR = std::clamp(dryR + feedbackR_ * feedback, -1.2f, 1.2f);
+
+        const float distortedL = distortionLeft_.ProcessSample(inputL, settings, inPeakL, outPeakL);
+        const float distortedR = distortionRight_.ProcessSample(inputR, settings, inPeakR, outPeakR);
 
         lfoPhase_ += lfoInc;
         if (lfoPhase_ > kTwoPi)
@@ -71,6 +77,9 @@ void UziDsp::Process(daisy::AudioHandle::InputBuffer in,
         float wetL = 0.0f;
         float wetR = 0.0f;
         spectral_.ProcessSample(distortedL, distortedR, runtime, lfoValue, hopSize, wetL, wetR);
+
+        feedbackL_ = wetL;
+        feedbackR_ = wetR;
 
         out[0][i] = dryL * dryMix + wetL * wetMix;
         out[1][i] = dryR * dryMix + wetR * wetMix;
