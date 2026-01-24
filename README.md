@@ -1,6 +1,6 @@
 # kxmx_bluemchen Firmware Collection
 
-A set of firmwares for the [kxmx_bluemchen](https://kxmx-bluemchen.recursinging.com/) Eurorack module, including DSF synthesis, dual resonators, and spectral processors (Slime, Uzi).
+A set of firmwares for the [kxmx_bluemchen](https://kxmx-bluemchen.recursinging.com/) Eurorack module, including DSF synthesis, dual resonators, spectral processors (Slime, Uzi), and the Neurotic neural‑inspired suite.
 
 See also [Flues synth experiments](https://github.com/danja/flues) and [disyn-esp32](https://github.com/danja/disyn-esp32)
 
@@ -10,6 +10,7 @@ See also [Flues synth experiments](https://github.com/danja/flues) and [disyn-es
 - **resonators** *(awesome)*: Dual delay‑line resonators with 1V/oct tracking, wavefolding, cross‑feedback, damping, calibration, and bipolar knob/CV offsets. 
 - **slime** *(poor)*: Stereo FFT spectral processor with time smear, multiple spectral effects, debug pages, and bipolar knob/CV control. 
 - **uzi**: Stereo spectral phaser with distortion front-end, spectral notching, crossover, and LFO modulation.
+- **neurotic**: 10‑algorithm neural‑inspired processor/synth with menu‑selectable models.
 
 **Status 2026-01-15 :** all three have been tested on hardware and work a treat. There are rough edges - the material shown on display could be tidied up a lot and various parameters could be tweaked. But the are good enough for my rack.
 
@@ -186,6 +187,7 @@ Additional docs:
 - [docs/resonators-manual.md](docs/resonators-manual.md)
 - [docs/slime-manual.md](docs/slime-manual.md)
 - [docs/uzi-manual.md](docs/uzi-manual.md)
+- [docs/neurotic-manual.md](docs/neurotic-manual.md)
 - [docs/dependencies.md](docs/dependencies.md)
 
 ### Quick Start
