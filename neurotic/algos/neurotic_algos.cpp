@@ -401,12 +401,12 @@ public:
 
         s_spectral.BuildSpectrum();
 
-        const float depth = std::clamp(rt.c1 * 1.6f, 0.0f, 1.0f);
-        const float formant = std::clamp(rt.c2 * 1.4f, 0.0f, 1.0f);
+        const float depth = std::clamp(rt.c1 * 2.2f, 0.0f, 1.0f);
+        const float formant = std::clamp(rt.c2 * 2.0f, 0.0f, 1.0f);
         const float transient = rt.c3;
-        const float weave = std::clamp(rt.c4 * 1.6f, 0.0f, 1.0f);
+        const float weave = std::clamp(rt.c4 * 2.2f, 0.0f, 1.0f);
 
-        const float protect = std::clamp(transient * 0.6f + 0.2f, 0.0f, 1.0f);
+        const float protect = std::clamp(transient * 0.4f + 0.1f, 0.0f, 1.0f);
         const size_t formantBin = static_cast<size_t>(formant * formant * (kBins - 1));
 
         for (size_t k = 0; k < kBins; ++k)
@@ -425,8 +425,8 @@ public:
             const float formMix = (k < formantBin) ? weave : braid;
             const float magLNew = magL * (1.0f - formMix) + magR * formMix;
             const float magRNew = magR * (1.0f - formMix) + magL * formMix;
-            const float phaseLNew = phaseL + ShortestPhaseDelta(phaseL, phaseR) * braid * protect * 1.6f;
-            const float phaseRNew = phaseR + ShortestPhaseDelta(phaseR, phaseL) * braid * protect * 1.6f;
+            const float phaseLNew = phaseL + ShortestPhaseDelta(phaseL, phaseR) * braid * protect * 2.4f;
+            const float phaseRNew = phaseR + ShortestPhaseDelta(phaseR, phaseL) * braid * protect * 2.4f;
 
             s_spectral.re[0][k] = magLNew * std::cos(phaseLNew);
             s_spectral.im[0][k] = magLNew * std::sin(phaseLNew);
@@ -475,7 +475,7 @@ public:
 
         const float dl = s_delayA.Read(delaySamp);
         const float dr = s_delayB.Read(delaySamp * 0.97f);
-        const float gapCut = MapExpo(1.0f - headGap, 200.0f, 9000.0f);
+        const float gapCut = MapExpo(1.0f - headGap, 80.0f, 12000.0f);
         const float fbL = OnePoleProcess(dl, gapCut, sampleRate_, lpStateL_);
         const float fbR = OnePoleProcess(dr, gapCut, sampleRate_, lpStateR_);
 
@@ -673,9 +673,9 @@ public:
 
     void Process(float inL, float inR, const NeuroticRuntime &rt, float &outL, float &outR)
     {
-        const float punch = std::clamp(rt.c1 * 1.5f, 0.0f, 1.0f);
-        const float glue = std::clamp(rt.c2 * 1.3f, 0.0f, 1.0f);
-        const float lift = std::clamp(rt.c3 * 1.4f, 0.0f, 1.0f);
+        const float punch = std::clamp(rt.c1 * 2.0f, 0.0f, 1.0f);
+        const float glue = std::clamp(rt.c2 * 1.6f, 0.0f, 1.0f);
+        const float lift = std::clamp(rt.c3 * 2.0f, 0.0f, 1.0f);
         const float bias = rt.c4;
 
         const float attack = 0.002f + (1.0f - punch) * 0.02f;
@@ -687,13 +687,14 @@ public:
         envR_ += (std::fabs(inR) - envR_) * release;
 
         const float env = Lerp(envL_, envR_, glue);
-        const float comp = 1.0f / (1.0f + env * (1.0f + punch * 10.0f));
-        const float liftGain = 1.0f + lift * 1.0f;
+        const float comp = 1.0f / (1.0f + env * (1.0f + punch * 18.0f));
+        const float liftGain = 1.0f + lift * 1.6f;
 
         const float mixL = Lerp(inL, inR, bias);
         const float mixR = Lerp(inR, inL, bias);
-        outL = mixL * comp * liftGain;
-        outR = mixR * comp * liftGain;
+        const float expand = 1.0f + lift * 0.6f;
+        outL = SoftClip(mixL * comp * liftGain * expand);
+        outR = SoftClip(mixR * comp * liftGain * expand);
     }
 
 private:
@@ -796,9 +797,9 @@ public:
 
         s_spectral.BuildSpectrum();
 
-        const float bind = rt.c1;
-        const float swirl = std::clamp(rt.c2 * 1.6f + rt.lfoValue * rt.lfoDepth * 0.4f, 0.0f, 1.0f);
-        const float tilt = std::clamp(rt.c3 * 1.6f, 0.0f, 1.0f);
+        const float bind = std::clamp(rt.c1 * 1.6f, 0.0f, 1.0f);
+        const float swirl = std::clamp(rt.c2 * 2.2f + rt.lfoValue * rt.lfoDepth * 0.6f, 0.0f, 1.0f);
+        const float tilt = std::clamp(rt.c3 * 2.2f, 0.0f, 1.0f);
         const float stereo = rt.c4;
 
         for (size_t k = 1; k < kBins - 1; ++k)
@@ -814,7 +815,7 @@ public:
             const float phaseR = std::atan2(imR, reR);
 
             const float warp = (static_cast<float>(k) / static_cast<float>(kBins)) * tilt;
-        const float swirlPhase = std::sin(k * 0.03f) * swirl * 1.2f;
+            const float swirlPhase = std::sin(k * 0.03f) * swirl * 2.4f;
 
             const float phaseLNew = phaseL + swirlPhase + warp;
             const float phaseRNew = phaseR - swirlPhase - warp;
