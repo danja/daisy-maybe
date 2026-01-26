@@ -18,7 +18,7 @@ private:
     MenuState menuState_{};
     EncoderState encoderState_{};
 
-    MenuItem algoItems_[6]{};
+    MenuItem algoItems_[5]{};
     MenuPage pages_[1]{};
 
     uint32_t lastDisplayUpdateMs_ = 0;

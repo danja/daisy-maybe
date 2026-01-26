@@ -38,9 +38,8 @@ void NeuroticUi::Init(kxmx::Bluemchen &hw, NeuroticState &state)
     algoItems_[0] = {"MIX", MenuItemType::Percent, &state.mix, nullptr, 0.0f, 1.0f, 0.02f};
     algoItems_[1] = {"LDEPTH", MenuItemType::Percent, &state.lfoDepth, nullptr, 0.0f, 1.0f, 0.02f};
     algoItems_[2] = {"LRATE", MenuItemType::Percent, &state.lfoRate, nullptr, 0.0f, 1.0f, 0.02f};
-    algoItems_[3] = {"OUT", MenuItemType::Percent, &state.outTrim, nullptr, 0.0f, 1.5f, 0.02f};
-    algoItems_[4] = {kAlgoParamLabels[0][0], MenuItemType::Percent, &state.c3, nullptr, 0.0f, 1.0f, 0.02f};
-    algoItems_[5] = {kAlgoParamLabels[0][1], MenuItemType::Percent, &state.c4, nullptr, 0.0f, 1.0f, 0.02f};
+    algoItems_[3] = {kAlgoParamLabels[0][0], MenuItemType::Percent, &state.c3, nullptr, 0.0f, 1.0f, 0.02f};
+    algoItems_[4] = {kAlgoParamLabels[0][1], MenuItemType::Percent, &state.c4, nullptr, 0.0f, 1.0f, 0.02f};
 
     pages_[0] = {kAlgoNames[0], algoItems_, sizeof(algoItems_) / sizeof(algoItems_[0])};
 
@@ -55,8 +54,8 @@ void NeuroticUi::Init(kxmx::Bluemchen &hw, NeuroticState &state)
 void NeuroticUi::UpdateAlgoLabels(int algoIndex)
 {
     const int clamped = std::clamp(algoIndex, 0, 9);
-    algoItems_[4].label = kAlgoParamLabels[clamped][0];
-    algoItems_[5].label = kAlgoParamLabels[clamped][1];
+    algoItems_[3].label = kAlgoParamLabels[clamped][0];
+    algoItems_[4].label = kAlgoParamLabels[clamped][1];
     pages_[0].title = kAlgoNames[clamped];
     algoIndex_ = clamped;
 }

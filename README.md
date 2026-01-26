@@ -9,10 +9,10 @@ See also [Flues synth experiments](https://github.com/danja/flues) and [disyn-es
 - **daisy-dsf**  *(not great)*: Discrete Summation Formula (DSF) synthesizer porting algorithms from the disyn browser synth project.
 - **resonators** *(awesome)*: Dual delay‑line resonators with 1V/oct tracking, wavefolding, cross‑feedback, damping, calibration, and bipolar knob/CV offsets. 
 - **slime** *(poor)*: Stereo FFT spectral processor with time smear, multiple spectral effects, debug pages, and bipolar knob/CV control. 
-- **uzi**: Stereo spectral phaser with distortion front-end, spectral notching, crossover, and LFO modulation.
-- **neurotic**: 10‑algorithm neural‑inspired processor with menu‑selectable models.
+- **uzi**: *(better than slime, but still not great)* Stereo spectral phaser with distortion front-end, spectral notching, crossover, and LFO modulation.
+- **neurotic**: *(good, but odd. Still tweaking)* 10‑algorithm neural‑inspired processor (says AI - there's nothing neural about it, it's more a mix of the above processing styles) with menu‑selectable models.
 
-**Status 2026-01-15 :** all three have been tested on hardware and work a treat. There are rough edges - the material shown on display could be tidied up a lot and various parameters could be tweaked. But the are good enough for my rack.
+**Status 2026-01-15 :** all tested on hardware and work according to some measure. There are quite a few rough edges - menu order, various parameters could be tweaked etc. But **reonators** and **neurotic** are currently in my rack.
 
 ## daisy-dsf Features
 

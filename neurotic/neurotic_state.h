@@ -9,7 +9,7 @@ struct NeuroticState
     int algoIndex = 0;
     float lfoDepth = 0.0f;
     float lfoRate = 0.2f;
-    float c3 = 0.5f;
+    float c3 = 0.0f;
     float c4 = 0.5f;
 };
 

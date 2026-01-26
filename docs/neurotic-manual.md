@@ -15,81 +15,80 @@ Top line shows the algorithm name. Items underneath (same on every algorithm):
 1. **MIX** – Dry/wet balance (default 100% wet).
 2. **LDEPTH** – LFO depth (applies where relevant).
 3. **LRATE** – LFO rate.
-4. **OUT** – Output trim.
-5. **Param 1 (C3)** – Algorithm‑specific.
-6. **Param 2 (C4)** – Algorithm‑specific.
+4. **Param 1 (C3)** – Algorithm‑specific.
+5. **Param 2 (C4)** – Algorithm‑specific.
 
 ## Algorithms
 
 ### 0. CrossRes (Neural Cross‑Resonator)
-A resonant “virtual body” with modal density and stereo asymmetry.
-- **C1 Mass**: changes modal density / low‑end weight.
-- **C2 Tension**: shifts resonant frequencies.
-- **C3 MASS**: density/weight emphasis.
-- **C4 ASYM**: stereo dispersion.
+Two cascaded SVF band‑pass resonators per channel, followed by a one‑pole damping filter. The resonant center follows tension; stereo offset introduces detune between channels.
+- **C1 Mass**: increases resonator spacing (modal density/spread).
+- **C2 Tension**: base resonant frequency (exponential map).
+- **C3 MASS**: damping amount (darker/shorter as it rises).
+- **C4 ASYM**: stereo detune between L/R resonators.
 
 ### 1. Braid (Latent Spectral Braider)
-STFT‑based cross‑spectral braid between inputs. Stronger settings exchange identity.
-- **C1 Braid Depth**: amount of partial exchange.
-- **C2 Formant Swap**: spectral envelope mapping.
-- **C3 FORM**: envelope bias.
-- **C4 TRANS**: transient protection.
+STFT cross‑spectral braid: magnitudes and phases of L/R are interwoven per‑bin with transient protection. FFT is 1024 with 256‑sample hop and windowed overlap/add.
+- **C1 Braid Depth**: strength of L/R magnitude exchange.
+- **C2 Formant Swap**: bias of envelope sharing between channels.
+- **C3 FORM**: transient protection (higher keeps attacks intact).
+- **C4 TRANS**: additional weave emphasis across bands.
 
 ### 2. TapeHyd (Neural Tape Hydraulics)
-Tape‑like delay with flutter and saturation.
-- **C1 Drive**: saturation intensity.
+Stereo tape‑style delay with modulation, soft saturation, and feedback tone shaping. Delay time is modulated by an internal LFO; feedback is low‑passed by head‑gap control.
+- **C1 Drive**: saturation before the delays.
 - **C2 Flow**: modulation depth and speed.
-- **C3 HEAD**: high‑frequency loss / smear width.
+- **C3 HEAD**: head‑gap low‑pass (higher = darker).
 - **C4 FDBK**: feedback amount.
 
 ### 3. Binaural (Binaural Gesture Mapper)
-Spatial movement with ITD/ILD effects and distance filtering.
-- **C1 Azimuth**: left‑right orbit.
-- **C2 Elevation**: top/bottom placement.
-- **C3 Distance**: near/far filtering.
-- **C4 SPIN**: rotating motion.
+Stereo spatializer with interaural time differences (ITD), equal‑power panning, and distance filtering. A spin LFO adds orbiting movement.
+- **C1 Azimuth**: left/right pan center.
+- **C2 Elevation**: dry vs filtered distance blend.
+- **C3 Distance**: mono low‑pass distance (near ↔ far).
+- **C4 SPIN**: rotation amount (adds moving pan).
 
 ### 4. Formant (Neural Formant Forge)
-Formant lattice for vocal/reed tones.
-- **C1 Vowel Pull**: locks toward vowel‑like resonances.
-- **C2 Articulation**: smooth vs. percussive movement.
-- **C3 BREATH**: noise/air injection.
-- **C4 SPLIT**: stereo formant divergence.
+Three SVF band‑pass formant filters per channel with adjustable spread. ARTIC injects noise into the excitation. BREATH adds “air” (high‑passed input) and stereo formant divergence.
+- **C1 Vowel Pull**: base formant frequency.
+- **C2 Articulation**: formant spacing/spread.
+- **C3 ARTIC**: noise injection amount (default 0).
+- **C4 BREATH**: air mix and stereo divergence.
 
 ### 5. Diffusion (Neural Diffusion Multiband)
-Smears energy in time and frequency with drift.
-- **C1 Spread**: diffusion extent.
-- **C2 Color**: spectral tilt.
-- **C3 Grain**: diffusion granularity.
-- **C4 Drift**: stereo drift.
+Dual short delays with sinusoidal modulation and feedback smear. Color tilts dry contribution for a spectral skew.
+- **C1 Spread**: delay depth/spread.
+- **C2 Color**: spectral tilt between dry and delayed.
+- **C3 Grain**: feedback amount in the diffusers.
+- **C4 Drift**: modulation rate/depth.
 
 ### 6. Energy (Neural Energy Shaper)
-Dynamics reshaper with punch/glue/lift.
-- **C1 Punch**: transient emphasis.
-- **C2 Glue**: linking between channels.
-- **C3 Lift**: upward energy tilt.
-- **C4 Bias**: which channel dominates.
+Envelope‑linked dynamics shaper. Punch changes attack/release; glue links L/R envelopes; lift adds upward tilt; bias cross‑mixes channels.
+- **C1 Punch**: transient emphasis (faster attack).
+- **C2 Glue**: link between channels.
+- **C3 Lift**: output energy lift.
+- **C4 Bias**: cross‑channel blend.
 
 ### 7. Harmonic (Neural Harmonic Cartographer)
-Remaps partials into stretched/inharmonic spectra.
-- **C1 Stretch**: harmonic spacing.
-- **C2 Inharm**: bends partials off‑grid.
-- **C3 Sparse**: selects fewer partials.
-- **C4 Mirror**: folds highs into lows.
+Spectral remap of bins into stretched and inharmonic grids, with gated sparsity and optional mirror folding from highs to lows.
+- **C1 Stretch**: harmonic spacing scale.
+- **C2 Inharm**: inharmonic bend amount.
+- **C3 Sparse**: gating/sparsity of partials.
+- **C4 Mirror**: fold highs into lows.
 
 ### 8. PhaseLoom (Neural Phase Loom)
-Phase re‑weaving with swirl and tilt.
-- **C1 Bind**: lock phases between channels.
-- **C2 Swirl**: nonlinear phase warping.
-- **C3 Tilt**: low/high phase skew.
-- **C4 Stereo**: widen/narrow.
+Phase‑domain warp: phase swirl and tilt per bin with optional inter‑channel binding. Stereo control widens or narrows output energy.
+- **C1 Bind**: lock phase between L/R.
+- **C2 Swirl**: sinusoidal phase warp strength.
+- **C3 Tilt**: frequency‑dependent phase skew.
+- **C4 Stereo**: widen/narrow low‑bin energy.
 
 ### 9. MicroGran (Neural Micro‑Granulator)
-Granular micro‑texture from the input.
-- **C1 Size**: grain size.
-- **C2 Drift**: pitch/time variance.
-- **C3 Blend**: dry vs granulated.
-- **C4 Scatter**: stereo grain spread.
+Micro‑granulation using short delay taps with windowed holds. Drift adds time jitter (not noise). Blend crossfades dry/grain.
+- **C1 Size**: grain length.
+- **C2 Drift**: random time jitter.
+- **C3 Blend**: dry ↔ grain.
+- **C4 Scatter**: stereo offset between grain taps.
 
 ## Notes
 - LFO affects algorithms where modulation makes sense (e.g., Braid, TapeHyd, Diffusion, PhaseLoom, Binaural).

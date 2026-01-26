@@ -23,7 +23,7 @@ void NeuroticParams::Update(kxmx::Bluemchen &hw, const NeuroticState &state, Neu
     const float c2 = std::clamp(0.5f + 0.5f * (pot2Bipolar + cv2Bipolar), 0.0f, 1.0f);
 
     runtime.mix = state.mix;
-    runtime.outTrim = state.outTrim;
+    runtime.outTrim = 1.0f;
     runtime.algoIndex = state.algoIndex;
     runtime.c3 = state.c3;
     runtime.c4 = state.c4;
