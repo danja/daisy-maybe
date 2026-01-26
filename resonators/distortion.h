@@ -3,13 +3,6 @@
 #include <algorithm>
 #include <cmath>
 
-struct DistortionSettings
-{
-    float depth = 0.0f;
-    int folds = 1;
-    float overdrive = 0.0f;
-};
-
 inline float ApplyWavefolder(float sample, float depth, int folds)
 {
     if (depth <= 0.0f || folds <= 0)
@@ -40,7 +33,8 @@ inline float ApplyOverdrive(float sample, float amount)
         return sample;
     }
 
-    const float drive = 1.0f + amount * 4.0f;
+    const float shaped = amount * amount;
+    const float drive = 1.0f + shaped * 28.0f;
     const float soft = std::tanh(sample * drive);
     if (amount < 0.5f)
     {
@@ -48,7 +42,8 @@ inline float ApplyOverdrive(float sample, float amount)
     }
 
     const float hard = std::clamp(sample, -1.0f, 1.0f);
-    return soft + (hard - soft) * ((amount - 0.5f) * 2.0f);
+    const float hardMix = (amount - 0.5f) * 2.0f;
+    return soft + (hard - soft) * hardMix;
 }
 
 struct DistortionChannel
@@ -56,15 +51,7 @@ struct DistortionChannel
     float makeupGain = 1.0f;
 
     void Reset() { makeupGain = 1.0f; }
-
-    float ProcessSample(float input, const DistortionSettings &settings, float &inPeak, float &outPeak)
-    {
-        inPeak = std::max(inPeak, std::fabs(input));
-        const float folded = ApplyWavefolder(input, settings.depth, settings.folds);
-        const float driven = ApplyOverdrive(folded, settings.overdrive);
-        outPeak = std::max(outPeak, std::fabs(driven));
-        return driven * makeupGain;
-    }
+    float ApplyMakeup(float input) const { return input * makeupGain; }
 
     void UpdateMakeup(float inPeak, float outPeak)
     {

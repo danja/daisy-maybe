@@ -7,46 +7,62 @@
 
 struct FeedFilters
 {
-    daisysp::OnePole x;
-    daisysp::OnePole x2;
-    daisysp::OnePole y;
-    daisysp::OnePole y2;
+    daisysp::Svf x;
+    daisysp::Svf y;
 
-    void Init()
+    void Init(float sampleRate)
     {
-        x.Init();
-        x2.Init();
-        y.Init();
-        y2.Init();
+        sampleRate_ = sampleRate;
+        x.Init(sampleRate);
+        y.Init(sampleRate);
     }
 
-    void SetDampX(float damp)
+    void SetParams(float level, float ratio, float q, float baseFreqX, float baseFreqY)
     {
-        const float cutoff = MapCutoff(damp);
-        x.SetFrequency(cutoff);
-        x2.SetFrequency(cutoff);
-    }
-    void SetDampY(float damp)
-    {
-        const float cutoff = MapCutoff(damp);
-        y.SetFrequency(cutoff);
-        y2.SetFrequency(cutoff);
+        level_ = std::clamp(level, 0.0f, 1.0f);
+        ratio_ = std::clamp(ratio, 0.25f, 2.0f);
+        res_ = MapQToRes(q);
+
+        x.SetFreq(ClampCutoff(baseFreqX * ratio_));
+        y.SetFreq(ClampCutoff(baseFreqY * ratio_));
+        x.SetRes(res_);
+        y.SetRes(res_);
     }
 
-    float ProcessX(float v) { return x2.Process(x.Process(v)); }
-    float ProcessY(float v) { return y2.Process(y.Process(v)); }
+    float ProcessX(float v)
+    {
+        x.Process(v);
+        return Mix(v, x.Low(), level_);
+    }
+    float ProcessY(float v)
+    {
+        y.Process(v);
+        return Mix(v, y.Low(), level_);
+    }
 
   private:
-    static float MapCutoff(float damp)
+    float sampleRate_ = 48000.0f;
+    float level_ = 1.0f;
+    float ratio_ = 1.0f;
+    float res_ = 0.0f;
+
+    float ClampCutoff(float freq) const
     {
         const float minCut = 20.0f;
         const float maxCut = 12000.0f;
-        const float clamped = std::clamp(damp, 0.0f, 1.0f);
-        const float shaped = clamped * clamped;
-        const float logMin = std::log(minCut);
-        const float logMax = std::log(maxCut);
-        const float t = 1.0f - shaped;
-        return std::exp(logMin + t * (logMax - logMin));
+        const float nyquistSafe = sampleRate_ / 3.0f;
+        return std::clamp(freq, minCut, std::min(maxCut, nyquistSafe));
+    }
+
+    static float MapQToRes(float q)
+    {
+        const float clamped = std::clamp(q, 0.5f, 2.0f);
+        return (clamped - 0.5f) / 1.5f;
+    }
+
+    static float Mix(float dry, float wet, float mix)
+    {
+        return dry + (wet - dry) * mix;
     }
 };
 

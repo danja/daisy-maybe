@@ -67,20 +67,22 @@ This firmware turns the module into a pair of tuned delay-line resonators with a
 
 The top line shows the current page title. When the title line is selected, rotating the encoder switches pages.
 
-- **Master**
-  - `DMIX`: Dry/wet mix between the direct input and the wavefolder/overdrive stage.
-  - `RMIX`: Resonator wet/dry mix at the output.
-  - `FXX`: Resonator X to X feed via filter.
-  - `FYY`: Resonator Y to Y feed via filter.
-  - `FXY`: Resonator X to Y feed via filter.
-  - `FYX`: Resonator Y to X feed via filter.
-- **Dist**
-  - `FOLD`: Number of wavefolds (1–5).
-  - `ODRV`: Overdrive amount (soft to hard clipping).
-- **Res**
+- **Wiring**
+  - `X-X`: Resonator X to X feed via filter.
+  - `Y-Y`: Resonator Y to Y feed via filter.
+  - `X-Y`: Resonator X to Y feed via filter.
+  - `Y-X`: Resonator Y to X feed via filter.
+- **Resonate**
   - `RAT`: Resonator Y ratio vs X delay time (0.25–4.0).
-  - `DMX`: Damping for resonator X feed filter.
-  - `DMY`: Damping for resonator Y feed filter.
+  - `MIX`: Resonator wet/dry mix at the output.
+- **Distort**
+  - `FOLD`: Fold mix (dry ↔ folded).
+  - `DRIV`: Overdrive mix (dry ↔ driven).
+  - `NFLD`: Number of wavefolds (1–5).
+- **Filter**
+  - `MIX`: Filter mix (dry ↔ filtered) on the feed paths.
+  - `FREQ`: Filter cutoff ratio (0.25–2.0) relative to each resonator pitch.
+  - `Q`: Filter resonance (0.5–2.0).
 
 ## Calibration Mode (CAL)
 
@@ -97,16 +99,17 @@ The feed paths are filtered and summed before the wavefolder/overdrive stage. Th
 
 Tip: use higher `FXX` for strong single-resonator tones; add `FXY`/`FYX` for stereo interplay and coupled resonances.
 
-## Damping
+## Filter
 
-`DMX` and `DMY` apply lowpass filters to the feed paths.
+The feed paths run through a 2-pole lowpass filter before the distortion stage.
 
-- Low damping = brighter, longer resonance
-- High damping = darker, shorter resonance
+- Higher `FREQ` keeps the feedback bright; lower values darken the tone.
+- Higher `Q` emphasizes cutoff resonance; lower values are smoother.
+- `MIX` blends between dry feedback and filtered feedback.
 
 ## Mixes
 
-`WMIX` sets how much wavefolder/overdrive is blended into the resonator input. `RMIX` sets the resonator wet/dry output balance.
+`FOLD` and `DRIV` set how much distortion is blended into the resonator input. `MIX` sets the resonator wet/dry output balance.
 
 ## Tips
 

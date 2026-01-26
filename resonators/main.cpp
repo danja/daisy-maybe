@@ -38,27 +38,32 @@ namespace
         }
     };
 
-    struct MasterParams
+    struct WiringParams
     {
-        float waveMix = 0.0f;
-        float resonatorMix = 1.0f;
-        float feedXX = 0.7f;
-        float feedYY = 0.7f;
+        float feedXX = 0.8f;
+        float feedYY = 0.8f;
         float feedXY = 0.0f;
         float feedYX = 0.0f;
     };
 
     struct DistortionParams
     {
-        int folds = 2;
-        float overdrive = 0.0f;
+        int folds = 3;
+        float foldMix = 1.0f;
+        float driveMix = 0.0f;
     };
 
     struct ResonatorParams
     {
         float ratio = 1.0f;
-        float dampX = 0.0f;
-        float dampY = 0.0f;
+        float mix = 1.0f;
+    };
+
+    struct FilterParams
+    {
+        float level = 0.2f;
+        float freqRatio = 0.25f;
+        float q = 0.7f;
     };
 
     float MapExpo(float value, float minVal, float maxVal)
@@ -76,34 +81,40 @@ DistortionChannel distortionY;
 EncoderState encoderState;
 MenuState menuState;
 
-MasterParams masterParams;
+WiringParams wiringParams;
 DistortionParams distortionParams;
 ResonatorParams resonatorParams;
+FilterParams filterParams;
 
-MenuItem masterItems[] = {
-    {"DMIX", MenuItemType::Percent, &masterParams.waveMix, nullptr, 0.0f, 1.0f, 0.02f},
-    {"RMIX", MenuItemType::Percent, &masterParams.resonatorMix, nullptr, 0.0f, 1.0f, 0.02f},
-    {"FXX", MenuItemType::Percent, &masterParams.feedXX, nullptr, 0.0f, kMaxFeed, 0.02f},
-    {"FYY", MenuItemType::Percent, &masterParams.feedYY, nullptr, 0.0f, kMaxFeed, 0.02f},
-    {"FXY", MenuItemType::Percent, &masterParams.feedXY, nullptr, 0.0f, kMaxFeed, 0.02f},
-    {"FYX", MenuItemType::Percent, &masterParams.feedYX, nullptr, 0.0f, kMaxFeed, 0.02f},
-};
-
-MenuItem distortionItems[] = {
-    {"FOLD", MenuItemType::Int, nullptr, &distortionParams.folds, 1.0f, 5.0f, 1.0f},
-    {"ODRV", MenuItemType::Percent, &distortionParams.overdrive, nullptr, 0.0f, 1.0f, 0.02f},
+MenuItem wiringItems[] = {
+    {"X-X", MenuItemType::Percent, &wiringParams.feedXX, nullptr, 0.0f, kMaxFeed, 0.02f},
+    {"Y-Y", MenuItemType::Percent, &wiringParams.feedYY, nullptr, 0.0f, kMaxFeed, 0.02f},
+    {"X-Y", MenuItemType::Percent, &wiringParams.feedXY, nullptr, 0.0f, kMaxFeed, 0.02f},
+    {"Y-X", MenuItemType::Percent, &wiringParams.feedYX, nullptr, 0.0f, kMaxFeed, 0.02f},
 };
 
 MenuItem resonatorItems[] = {
-    {"RAT", MenuItemType::Ratio, &resonatorParams.ratio, nullptr, 0.25f, 4.0f, 0.01f},
-    {"DMX", MenuItemType::Percent, &resonatorParams.dampX, nullptr, 0.0f, 1.0f, 0.02f},
-    {"DMY", MenuItemType::Percent, &resonatorParams.dampY, nullptr, 0.0f, 1.0f, 0.02f},
+    {"Ratio", MenuItemType::Ratio, &resonatorParams.ratio, nullptr, 0.25f, 4.0f, 0.05f},
+    {"Mix", MenuItemType::Percent, &resonatorParams.mix, nullptr, 0.0f, 1.0f, 0.02f},
+};
+
+MenuItem distortionItems[] = {
+    {"Fold", MenuItemType::Percent, &distortionParams.foldMix, nullptr, 0.0f, 1.0f, 0.02f},
+    {"Drive", MenuItemType::Percent, &distortionParams.driveMix, nullptr, 0.0f, 1.0f, 0.02f},
+    {"NFold", MenuItemType::Int, nullptr, &distortionParams.folds, 1.0f, 5.0f, 1.0f},
+};
+
+MenuItem filterItems[] = {
+    {"Level", MenuItemType::Percent, &filterParams.level, nullptr, 0.0f, 1.0f, 0.02f},
+    {"Freq", MenuItemType::Ratio, &filterParams.freqRatio, nullptr, 0.25f, 2.0f, 0.05f},
+    {"Q", MenuItemType::Ratio, &filterParams.q, nullptr, 0.5f, 2.0f, 0.05f},
 };
 
 MenuPage menuPages[] = {
-    {"Master", masterItems, sizeof(masterItems) / sizeof(masterItems[0])},
-    {"Dist", distortionItems, sizeof(distortionItems) / sizeof(distortionItems[0])},
-    {"Res", resonatorItems, sizeof(resonatorItems) / sizeof(resonatorItems[0])},
+    {"Wiring", wiringItems, sizeof(wiringItems) / sizeof(wiringItems[0])},
+    {"Resonate", resonatorItems, sizeof(resonatorItems) / sizeof(resonatorItems[0])},
+    {"Distort", distortionItems, sizeof(distortionItems) / sizeof(distortionItems[0])},
+    {"Filter", filterItems, sizeof(filterItems) / sizeof(filterItems[0])},
 };
 
 constexpr size_t kMenuPageCount = sizeof(menuPages) / sizeof(menuPages[0]);
@@ -192,8 +203,11 @@ void UpdateControls()
         }
     }
 
-    feedFilters.SetDampX(resonatorParams.dampX);
-    feedFilters.SetDampY(resonatorParams.dampY);
+    feedFilters.SetParams(filterParams.level,
+                          filterParams.freqRatio,
+                          filterParams.q,
+                          currentFreq,
+                          currentFreq2);
 }
 
 void HandleCalibrationSave()
@@ -251,16 +265,15 @@ void AudioCallback(AudioHandle::InputBuffer in,
 
     delays.SetDelayTimes(delaySamples1, delaySamples2);
 
-    const float waveMix = masterParams.waveMix;
-    const float resMix = masterParams.resonatorMix;
+    const float foldMix = distortionParams.foldMix;
+    const float driveMix = distortionParams.driveMix;
+    const float resMix = resonatorParams.mix;
     const float dryMix = 1.0f - resMix;
-    const float feedXX = masterParams.feedXX;
-    const float feedYY = masterParams.feedYY;
-    const float feedXY = masterParams.feedXY;
-    const float feedYX = masterParams.feedYX;
-
-    const float waveDrive = std::clamp(distortionParams.overdrive + waveDepth * 0.8f, 0.0f, 1.0f);
-    DistortionSettings distSettings{waveDepth, distortionParams.folds, waveDrive};
+    const float feedXX = wiringParams.feedXX;
+    const float feedYY = wiringParams.feedYY;
+    const float feedXY = wiringParams.feedXY;
+    const float feedYX = wiringParams.feedYX;
+    const int folds = distortionParams.folds;
 
     float inPeakX = 0.0f;
     float inPeakY = 0.0f;
@@ -294,15 +307,27 @@ void AudioCallback(AudioHandle::InputBuffer in,
         const float preDistX = inX + filteredX * feedXX + filteredY * feedYX;
         const float preDistY = inY + filteredY * feedYY + filteredX * feedXY;
 
-        const float distX = distortionX.ProcessSample(preDistX, distSettings, inPeakX, outPeakX);
-        const float distY = distortionY.ProcessSample(preDistY, distSettings, inPeakY, outPeakY);
+        const float foldX = ApplyWavefolder(preDistX, waveDepth, folds);
+        const float foldY = ApplyWavefolder(preDistY, waveDepth, folds);
+        const float foldMixX = preDistX + (foldX - preDistX) * foldMix;
+        const float foldMixY = preDistY + (foldY - preDistY) * foldMix;
 
-        // Blend dry and folded/overdriven signals before the resonators.
-        const float driveX = preDistX + (distX - preDistX) * waveMix;
-        const float driveY = preDistY + (distY - preDistY) * waveMix;
+        const float driveX = ApplyOverdrive(foldMixX, waveDepth);
+        const float driveY = ApplyOverdrive(foldMixY, waveDepth);
+        const float driveMixX = foldMixX + (driveX - foldMixX) * driveMix;
+        const float driveMixY = foldMixY + (driveY - foldMixY) * driveMix;
 
-        delays.Write1(SoftClipSample(driveX));
-        delays.Write2(SoftClipSample(driveY));
+        inPeakX = std::max(inPeakX, std::fabs(preDistX));
+        inPeakY = std::max(inPeakY, std::fabs(preDistY));
+        outPeakX = std::max(outPeakX, std::fabs(driveMixX));
+        outPeakY = std::max(outPeakY, std::fabs(driveMixY));
+
+        const float makeupX = distortionX.ApplyMakeup(driveMixX);
+        const float makeupY = distortionY.ApplyMakeup(driveMixY);
+
+        // Blend folded and overdriven signals before the resonators.
+        delays.Write1(SoftClipSample(makeupX));
+        delays.Write2(SoftClipSample(makeupY));
 
         out[0][i] = dryMix * inX + resMix * resX;
         out[1][i] = dryMix * inY + resMix * resY;
@@ -323,9 +348,7 @@ int main(void)
     sampleRate = hw.AudioSampleRate();
 
     delays.Init();
-    feedFilters.Init();
-    feedFilters.SetDampX(resonatorParams.dampX);
-    feedFilters.SetDampY(resonatorParams.dampY);
+    feedFilters.Init(sampleRate);
 
     distortionX.Reset();
     distortionY.Reset();
