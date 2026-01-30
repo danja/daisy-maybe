@@ -12,11 +12,12 @@ Neurotic is an 11‑algorithm, neural‑inspired processor for the kxmx_bluemche
 
 ## Menu Layout (single page)
 Top line shows the algorithm name. Items underneath (same on every algorithm):
-1. **MIX** – Dry/wet balance (default 80% wet).
-2. **LDEPTH** – LFO depth (applies where relevant).
-3. **LRATE** – LFO rate.
-4. **Param 1 (C3)** – Algorithm‑specific.
-5. **Param 2 (C4)** – Algorithm‑specific.
+1. **Mix** – Dry/wet balance (default 80% wet).
+2. **Feed** – Global feedback amount (percent).
+3. **Mod** – LFO depth (applies where relevant).
+4. **Rate** – LFO rate (0.1–9.9 Hz).
+5. **Param 1 (C3)** – Algorithm‑specific.
+6. **Param 2 (C4)** – Algorithm‑specific.
 
 ## Algorithms
 
@@ -94,7 +95,7 @@ Micro‑granulation using short delay taps with windowed holds. Drift adds time 
 All‑pass pole chain with feedback for broad, phase‑smeared diffusion. LFO modulates frequency.
 - **C1 Frequency**: all‑pass frequency (LFO applied).
 - **C2 Resonance**: pole feedback intensity (kept stable).
-- **C3 Poles**: 2–64 pole count.
+- **C3 Poles**: 2–128 pole count.
 - **C4 FDBK**: feedback amount.
 
 ## Notes

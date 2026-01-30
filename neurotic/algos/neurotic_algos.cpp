@@ -34,6 +34,12 @@ float MapExpo(float value, float minVal, float maxVal)
     return minVal * std::pow(maxVal / minVal, value);
 }
 
+float MapPitch(float value, float minMidi, float maxMidi)
+{
+    const float note = Lerp(minMidi, maxMidi, Clamp01(value));
+    return 440.0f * std::pow(2.0f, (note - 69.0f) / 12.0f);
+}
+
 float OnePoleProcess(float x, float cutoffHz, float sampleRate, float &state)
 {
     const float alpha = std::clamp(cutoffHz / (cutoffHz + sampleRate), 0.0f, 1.0f);
@@ -346,7 +352,7 @@ public:
         const float damping = rt.c3;
         const float asym = rt.c4;
 
-        const float base = MapExpo(tension, 60.0f, 2400.0f);
+        const float base = MapPitch(tension, 36.0f, 95.0f);
         const float spread = 1.0f + mass * 2.5f;
         const float q = 0.8f + (1.0f - damping) * 8.0f;
 
@@ -401,12 +407,12 @@ public:
 
         s_spectral.BuildSpectrum();
 
-        const float depth = std::clamp(rt.c1 * 3.0f, 0.0f, 1.0f);
-        const float formant = std::clamp(rt.c2 * 2.6f, 0.0f, 1.0f);
-        const float transient = std::clamp(rt.c3 * 1.4f, 0.0f, 1.0f);
-        const float weave = std::clamp(rt.c4 * 3.0f, 0.0f, 1.0f);
+        const float depth = Clamp01(rt.c1);
+        const float formant = Clamp01(rt.c2);
+        const float transient = Clamp01(rt.c3);
+        const float weave = Clamp01(rt.c4);
 
-        const float protect = std::clamp(0.2f + transient * 0.8f, 0.0f, 1.0f);
+        const float protect = Lerp(0.1f, 1.0f, transient);
         const size_t formantBin = static_cast<size_t>(formant * formant * (kBins - 1));
 
         for (size_t k = 0; k < kBins; ++k)
@@ -421,11 +427,10 @@ public:
             const float phaseL = std::atan2(imL, reL);
             const float phaseR = std::atan2(imR, reR);
 
-            const float braid = depth;
-            const float formMix = (k < formantBin) ? weave : braid;
-            const float magLNew = magL * (1.0f - formMix) + magR * formMix;
-            const float magRNew = magR * (1.0f - formMix) + magL * formMix;
-            const float phaseShift = formMix * protect * 4.0f;
+            const float mix = (k < formantBin) ? weave : depth;
+            const float magLNew = Lerp(magL, magR, mix);
+            const float magRNew = Lerp(magR, magL, mix);
+            const float phaseShift = mix * protect * 6.0f;
             const float phaseLNew = phaseL + ShortestPhaseDelta(phaseL, phaseR) * phaseShift;
             const float phaseRNew = phaseR + ShortestPhaseDelta(phaseR, phaseL) * phaseShift;
 
@@ -588,7 +593,7 @@ public:
         const float artic = rt.c3;
         const float breath = rt.c4;
 
-        const float base = MapExpo(vowel, 200.0f, 1000.0f);
+        const float base = MapPitch(vowel, 43.0f, 83.0f);
         const float spread = 1.4f + art * 1.5f;
         const float f1 = base;
         const float f2 = base * spread;
@@ -598,12 +603,12 @@ public:
         formL_[1].SetFreq(f2);
         formL_[2].SetFreq(f3);
 
-        const float splitMul = 1.0f + breath * 0.6f;
+        const float splitMul = 1.0f + breath * 0.9f;
         formR_[0].SetFreq(f1 * splitMul);
         formR_[1].SetFreq(f2 * splitMul);
         formR_[2].SetFreq(f3 * splitMul);
 
-        const float noise = (static_cast<float>(rand()) / RAND_MAX - 0.5f) * artic * 0.1f;
+        const float noise = (static_cast<float>(rand()) / RAND_MAX - 0.5f) * artic * 0.12f;
         const float nL = inL + noise;
         const float nR = inR + noise;
 
@@ -617,14 +622,14 @@ public:
             sumR += formR_[i].Band();
         }
 
-        const float airCut = MapExpo(breath, 800.0f, 8000.0f);
+        const float airCut = MapExpo(std::clamp(breath, 0.0f, 1.0f), 500.0f, 12000.0f);
         const float lpL = OnePoleProcess(inL, airCut, sampleRate_, airStateL_);
         const float lpR = OnePoleProcess(inR, airCut, sampleRate_, airStateR_);
         const float airL = inL - lpL;
         const float airR = inR - lpR;
 
-        outL = sumL * 0.6f + airL * (breath * 0.5f);
-        outR = sumR * 0.6f + airR * (breath * 0.5f);
+        outL = sumL * 0.6f + airL * (breath * 0.8f);
+        outR = sumR * 0.6f + airR * (breath * 0.8f);
     }
 
 private:
@@ -744,7 +749,7 @@ public:
         const float mirror = rt.c4;
 
         const float scale = 0.6f + stretch * 1.8f;
-        const float inharm = inh * 0.25f;
+        const float inharm = inh * 0.18f;
 
         for (size_t k = 0; k < kBins; ++k)
         {
@@ -767,9 +772,9 @@ public:
             const float imR = s_spectral.im[1][i0] + (s_spectral.im[1][i1] - s_spectral.im[1][i0]) * frac;
 
             const int period = 2 + static_cast<int>(sparsity * 24.0f);
-            const int width = std::max(1, period / 6);
+            const int width = std::max(1, period / 5);
             const int slot = static_cast<int>(k) % period;
-            const float gate = (slot < width) ? 1.0f : 0.2f;
+            const float gate = (slot < width) ? 1.0f : 0.35f;
             s_spectral.re[0][k] = reL * gate;
             s_spectral.im[0][k] = imL * gate;
             s_spectral.re[1][k] = reR * gate;
@@ -782,14 +787,15 @@ public:
             for (size_t k = mid; k < kBins; ++k)
             {
                 const size_t mirrorBin = kBins - 1 - k;
-                s_spectral.re[0][mirrorBin] += s_spectral.re[0][k] * mirror;
-                s_spectral.im[0][mirrorBin] -= s_spectral.im[0][k] * mirror;
-                s_spectral.re[1][mirrorBin] += s_spectral.re[1][k] * mirror;
-                s_spectral.im[1][mirrorBin] -= s_spectral.im[1][k] * mirror;
+                const float fold = mirror * 0.6f;
+                s_spectral.re[0][mirrorBin] += s_spectral.re[0][k] * fold;
+                s_spectral.im[0][mirrorBin] -= s_spectral.im[0][k] * fold;
+                s_spectral.re[1][mirrorBin] += s_spectral.re[1][k] * fold;
+                s_spectral.im[1][mirrorBin] -= s_spectral.im[1][k] * fold;
             }
         }
 
-        const float gain = 1.2f + stretch * 0.8f;
+        const float gain = 1.6f + stretch * 1.0f;
         for (size_t k = 0; k < kBins; ++k)
         {
             s_spectral.re[0][k] *= gain;
@@ -823,9 +829,9 @@ public:
 
         s_spectral.BuildSpectrum();
 
-        const float bind = std::clamp(rt.c1 * 2.4f, 0.0f, 1.0f);
-        const float swirl = std::clamp(rt.c2 * 3.0f + rt.lfoValue * rt.lfoDepth * 1.0f, 0.0f, 1.0f);
-        const float tilt = std::clamp(rt.c3 * 3.0f, 0.0f, 1.0f);
+        const float bind = std::clamp(rt.c1 * 3.0f, 0.0f, 1.0f);
+        const float swirl = std::clamp(rt.c2 * 4.0f + rt.lfoValue * rt.lfoDepth * 1.6f, 0.0f, 1.0f);
+        const float tilt = std::clamp(rt.c3 * 4.0f, 0.0f, 1.0f);
         const float stereo = rt.c4;
 
         for (size_t k = 1; k < kBins - 1; ++k)
@@ -840,8 +846,8 @@ public:
             const float phaseL = std::atan2(imL, reL);
             const float phaseR = std::atan2(imR, reR);
 
-            const float warp = (static_cast<float>(k) / static_cast<float>(kBins)) * tilt * 2.0f;
-            const float swirlPhase = std::sin(k * 0.03f) * swirl * 5.0f;
+            const float warp = (static_cast<float>(k) / static_cast<float>(kBins)) * tilt * 3.0f;
+            const float swirlPhase = std::sin(k * 0.02f) * swirl * 8.0f;
 
             const float phaseLNew = phaseL + swirlPhase + warp;
             const float phaseRNew = phaseR - swirlPhase - warp;
@@ -855,9 +861,9 @@ public:
             s_spectral.im[1][k] = magR * std::sin(linkR);
         }
 
-        const float widen = 1.0f + stereo * 0.8f;
+        const float widen = 1.0f + stereo * 1.1f;
         s_spectral.re[0][0] *= widen;
-        s_spectral.re[1][0] *= 1.0f - stereo * 0.3f;
+        s_spectral.re[1][0] *= 1.0f - stereo * 0.6f;
 
         s_spectral.InverseToOutput();
     }
@@ -943,13 +949,13 @@ public:
     {
         const float lfo = rt.lfoValue * rt.lfoDepth * 0.35f;
         const float freqControl = std::clamp(rt.c1 + lfo, 0.0f, 1.0f);
-        const float freqHz = MapExpo(freqControl, 40.0f, 12000.0f);
+        const float freqHz = MapPitch(freqControl, 28.0f, 122.0f);
         const float g = std::tan(kPi * freqHz / sampleRate_);
         float a = (1.0f - g) / (1.0f + g);
         const float res = 0.2f + rt.c2 * 0.78f;
         a = std::clamp(a * res, -0.98f, 0.98f);
 
-        const int poles = 2 + static_cast<int>(rt.c3 * 62.0f + 0.5f);
+        const int poles = 2 + static_cast<int>(rt.c3 * 126.0f + 0.5f);
         const float fb = std::clamp(rt.c4, 0.0f, 0.95f);
 
         float in[2] = {inL + fbState_[0] * fb, inR + fbState_[1] * fb};
@@ -971,7 +977,7 @@ public:
     }
 
 private:
-    static constexpr int kMaxPoles = 64;
+    static constexpr int kMaxPoles = 128;
     float sampleRate_ = 48000.0f;
     float x1_[2][kMaxPoles];
     float y1_[2][kMaxPoles];

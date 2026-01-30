@@ -11,5 +11,5 @@ LFO - frequency modulation
 On menu :
 
 * Mix 0-100% (default 80%)
-* Poles 2-64
+* Poles 2-128 (integer)
 * Feedback 0-100%

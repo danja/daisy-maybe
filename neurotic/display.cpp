@@ -79,6 +79,15 @@ void RenderDisplay(Bluemchen &hw, const DisplayData &data)
                          line.label,
                          line.intValue);
                 break;
+            case MenuItemType::Hz:
+            {
+                const float hz = 0.1f + line.value * 9.8f;
+                snprintf(buf, sizeof(buf), "%c%-6s %4.1f",
+                         line.selected ? '*' : ' ',
+                         line.label,
+                         hz);
+                break;
+            }
             }
             hw.display.SetCursor(0, row);
             hw.display.WriteString(buf, Font_6x8, true);

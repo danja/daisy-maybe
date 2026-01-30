@@ -7,6 +7,7 @@ enum class MenuItemType
     Percent,
     Ratio,
     Int,
+    Hz,
 };
 
 struct MenuItem

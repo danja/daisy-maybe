@@ -13,14 +13,15 @@ public:
     void RenderIfNeeded(kxmx::Bluemchen &hw, const NeuroticState &state, bool heartbeatOn, uint32_t nowMs);
 
 private:
-    void UpdateAlgoLabels(int algoIndex);
+    void UpdateAlgoLabels(NeuroticState &state);
 
     MenuState menuState_{};
     EncoderState encoderState_{};
 
-    MenuItem algoItems_[5]{};
+    MenuItem algoItems_[6]{};
     MenuPage pages_[1]{};
 
     uint32_t lastDisplayUpdateMs_ = 0;
     int algoIndex_ = 0;
+    int smearPoles_ = 2;
 };

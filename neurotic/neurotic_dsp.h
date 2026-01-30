@@ -17,5 +17,7 @@ private:
     float sampleRate_ = 48000.0f;
     int currentAlgo_ = 0;
     float lfoPhase_ = 0.0f;
+    float fbStateL_ = 0.0f;
+    float fbStateR_ = 0.0f;
     NeuroticAlgoBank algos_{};
 };
