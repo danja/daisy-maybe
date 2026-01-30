@@ -681,7 +681,11 @@ private:
 class AlgoNes
 {
 public:
-    void Init(float sampleRate) { sampleRate_ = sampleRate; }
+    void Init(float sampleRate)
+    {
+        sampleRate_ = sampleRate;
+        Reset();
+    }
     void Reset() { envL_ = 0.0f; envR_ = 0.0f; }
 
     void Process(float inL, float inR, const NeuroticRuntime &rt, float &outL, float &outR)
@@ -917,6 +921,63 @@ private:
     float holdWindow_ = 0.0f;
 };
 
+class AlgoNsm
+{
+public:
+    void Init(float sampleRate) { sampleRate_ = sampleRate; }
+
+    void Reset()
+    {
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            for (int i = 0; i < kMaxPoles; ++i)
+            {
+                x1_[ch][i] = 0.0f;
+                y1_[ch][i] = 0.0f;
+            }
+            fbState_[ch] = 0.0f;
+        }
+    }
+
+    void Process(float inL, float inR, const NeuroticRuntime &rt, float &outL, float &outR)
+    {
+        const float lfo = rt.lfoValue * rt.lfoDepth * 0.35f;
+        const float freqControl = std::clamp(rt.c1 + lfo, 0.0f, 1.0f);
+        const float freqHz = MapExpo(freqControl, 40.0f, 12000.0f);
+        const float g = std::tan(kPi * freqHz / sampleRate_);
+        float a = (1.0f - g) / (1.0f + g);
+        const float res = 0.2f + rt.c2 * 0.78f;
+        a = std::clamp(a * res, -0.98f, 0.98f);
+
+        const int poles = 2 + static_cast<int>(rt.c3 * 62.0f + 0.5f);
+        const float fb = std::clamp(rt.c4, 0.0f, 0.95f);
+
+        float in[2] = {inL + fbState_[0] * fb, inR + fbState_[1] * fb};
+        float out[2] = {0.0f, 0.0f};
+
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            float x = in[ch];
+            for (int i = 0; i < poles; ++i)
+            {
+                x = Allpass(x, a, x1_[ch][i], y1_[ch][i]);
+            }
+            out[ch] = x;
+            fbState_[ch] = x;
+        }
+
+        outL = SoftClip(out[0]);
+        outR = SoftClip(out[1]);
+    }
+
+private:
+    static constexpr int kMaxPoles = 64;
+    float sampleRate_ = 48000.0f;
+    float x1_[2][kMaxPoles];
+    float y1_[2][kMaxPoles];
+    float fbState_[2];
+};
+
 static AlgoNcr s_algoNcr;
 static AlgoLsb s_algoLsb;
 static AlgoNth s_algoNth;
@@ -927,6 +988,7 @@ static AlgoNes s_algoNes;
 static AlgoNhc s_algoNhc;
 static AlgoNpl s_algoNpl;
 static AlgoNmg s_algoNmg;
+static AlgoNsm s_algoNsm;
 
 void NeuroticAlgoBank::Init(float sampleRate)
 {
@@ -944,6 +1006,7 @@ void NeuroticAlgoBank::Init(float sampleRate)
     nhc_ = &s_algoNhc;
     npl_ = &s_algoNpl;
     nmg_ = &s_algoNmg;
+    nsm_ = &s_algoNsm;
 
     ncr_->Init(sampleRate_);
     lsb_->Init(sampleRate_);
@@ -955,6 +1018,7 @@ void NeuroticAlgoBank::Init(float sampleRate)
     nhc_->Init(sampleRate_);
     npl_->Init(sampleRate_);
     nmg_->Init(sampleRate_);
+    nsm_->Init(sampleRate_);
 }
 
 void NeuroticAlgoBank::Reset(int algoIndex)
@@ -994,6 +1058,9 @@ void NeuroticAlgoBank::Reset(int algoIndex)
     case 9:
         nmg_->Reset();
         break;
+    case 10:
+        nsm_->Reset();
+        break;
     default:
         break;
     }
@@ -1032,6 +1099,9 @@ void NeuroticAlgoBank::Process(int algoIndex, float inL, float inR, const Neurot
         break;
     case 9:
         nmg_->Process(inL, inR, rt, outL, outR);
+        break;
+    case 10:
+        nsm_->Process(inL, inR, rt, outL, outR);
         break;
     default:
         outL = inL;

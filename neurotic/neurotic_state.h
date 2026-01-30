@@ -4,7 +4,7 @@
 
 struct NeuroticState
 {
-    float mix = 1.0f;
+    float mix = 0.8f;
     float outTrim = 1.0f;
     int algoIndex = 0;
     float lfoDepth = 0.0f;
@@ -15,7 +15,7 @@ struct NeuroticState
 
 struct NeuroticRuntime
 {
-    float mix = 1.0f;
+    float mix = 0.8f;
     float outTrim = 1.0f;
     int algoIndex = 0;
     float c1 = 0.0f;

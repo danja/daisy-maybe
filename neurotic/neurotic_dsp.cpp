@@ -17,7 +17,7 @@ void NeuroticDsp::Process(daisy::AudioHandle::InputBuffer in,
 {
     if (runtime.algoIndex != currentAlgo_)
     {
-        currentAlgo_ = std::clamp(runtime.algoIndex, 0, 9);
+        currentAlgo_ = std::clamp(runtime.algoIndex, 0, 10);
         algos_.Reset(currentAlgo_);
     }
 

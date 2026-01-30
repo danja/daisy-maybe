@@ -1,6 +1,6 @@
 # Neurotic Manual
 
-Neurotic is a 10‑algorithm, neural‑inspired processor for the kxmx_bluemchen hardware. Each algorithm has its own page and name at the top line. The **title line** is the algorithm selector (rotate encoder to change). Below the title are shared controls plus two algorithm‑specific parameters.
+Neurotic is an 11‑algorithm, neural‑inspired processor for the kxmx_bluemchen hardware. Each algorithm has its own page and name at the top line. The **title line** is the algorithm selector (rotate encoder to change). Below the title are shared controls plus two algorithm‑specific parameters.
 
 ## Hardware Controls
 - **Knob 1 + CV1 (C1)**: Primary performance control (algorithm‑specific).
@@ -12,7 +12,7 @@ Neurotic is a 10‑algorithm, neural‑inspired processor for the kxmx_bluemchen
 
 ## Menu Layout (single page)
 Top line shows the algorithm name. Items underneath (same on every algorithm):
-1. **MIX** – Dry/wet balance (default 100% wet).
+1. **MIX** – Dry/wet balance (default 80% wet).
 2. **LDEPTH** – LFO depth (applies where relevant).
 3. **LRATE** – LFO rate.
 4. **Param 1 (C3)** – Algorithm‑specific.
@@ -90,6 +90,13 @@ Micro‑granulation using short delay taps with windowed holds. Drift adds time 
 - **C3 Blend**: dry ↔ grain.
 - **C4 Scatter**: stereo offset between grain taps.
 
+### 10. Smear (Neurotic Smear)
+All‑pass pole chain with feedback for broad, phase‑smeared diffusion. LFO modulates frequency.
+- **C1 Frequency**: all‑pass frequency (LFO applied).
+- **C2 Resonance**: pole feedback intensity (kept stable).
+- **C3 Poles**: 2–64 pole count.
+- **C4 FDBK**: feedback amount.
+
 ## Notes
-- LFO affects algorithms where modulation makes sense (e.g., Braid, TapeHyd, Diffusion, PhaseLoom, Binaural).
-- MIX is full wet by default; set to taste for parallel processing.
+- LFO affects algorithms where modulation makes sense (e.g., Braid, TapeHyd, Diffusion, PhaseLoom, Binaural, Smear).
+- MIX defaults to 80% wet; set to taste for parallel processing.

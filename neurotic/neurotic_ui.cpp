@@ -17,6 +17,7 @@ const char *kAlgoParamLabels[][2] = {
     {"INHARM", "SPARSE"},// 7 NHC
     {"SWIRL", "TILT"},   // 8 NPL
     {"DRIFT", "SCATTR"}, // 9 NMG
+    {"POLES", "FDBK"},   // 10 NSM
 };
 
 const char *kAlgoNames[] = {
@@ -30,6 +31,7 @@ const char *kAlgoNames[] = {
     "Harmonic",
     "PhaseLoom",
     "MicroGran",
+    "Smear",
 };
 }
 
@@ -53,7 +55,7 @@ void NeuroticUi::Init(kxmx::Bluemchen &hw, NeuroticState &state)
 
 void NeuroticUi::UpdateAlgoLabels(int algoIndex)
 {
-    const int clamped = std::clamp(algoIndex, 0, 9);
+    const int clamped = std::clamp(algoIndex, 0, 10);
     algoItems_[3].label = kAlgoParamLabels[clamped][0];
     algoItems_[4].label = kAlgoParamLabels[clamped][1];
     pages_[0].title = kAlgoNames[clamped];
@@ -75,7 +77,7 @@ void NeuroticUi::Update(kxmx::Bluemchen &hw, NeuroticState &state)
     {
         if (menuState_.selectedIndex == 0)
         {
-            const int next = (state.algoIndex + encInc + 10) % 10;
+            const int next = (state.algoIndex + encInc + 11) % 11;
             state.algoIndex = next;
             UpdateAlgoLabels(state.algoIndex);
         }
