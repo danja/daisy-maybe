@@ -117,6 +117,8 @@ void MenuBuildVisibleLines(const MenuState &state,
         line.label = item.label;
         line.type = item.type;
         line.selected = (state.selectedIndex - 1) == itemIndex;
+        line.value = 0.0f;
+        line.intValue = 0;
         if (item.type == MenuItemType::Int && item.intValue)
         {
             line.intValue = *item.intValue;

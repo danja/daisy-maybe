@@ -1,6 +1,6 @@
 # Neurotic Manual
 
-Neurotic is an 11‑algorithm, neural‑inspired processor for the kxmx_bluemchen hardware. Each algorithm has its own page and name at the top line. The **title line** is the algorithm selector (rotate encoder to change). Below the title are shared controls plus two algorithm‑specific parameters.
+Neurotic is a 14‑algorithm, neural‑inspired processor for the kxmx_bluemchen hardware. Each algorithm has its own page and name at the top line. The **title line** is the algorithm selector (rotate encoder to change). Below the title are shared controls plus two or three algorithm‑specific parameters.
 
 ## Hardware Controls
 - **Knob 1 + CV1 (C1)**: Primary performance control (algorithm‑specific).
@@ -18,15 +18,17 @@ Top line shows the algorithm name. Items underneath (same on every algorithm):
 4. **Rate** – LFO rate (0.1–9.9 Hz).
 5. **Param 1 (C3)** – Algorithm‑specific.
 6. **Param 2 (C4)** – Algorithm‑specific.
+7. **Param 3 (C5)** – Algorithm‑specific (only on some algorithms).
 
 ## Algorithms
 
-### 0. CrossRes (Neural Cross‑Resonator)
+### 0. CrossRes (Cross‑Resonator)
 Two cascaded SVF band‑pass resonators per channel, followed by a one‑pole damping filter. The resonant center follows tension; stereo offset introduces detune between channels.
-- **C1 Mass**: increases resonator spacing (modal density/spread).
-- **C2 Tension**: base resonant frequency (exponential map).
-- **C3 MASS**: damping amount (darker/shorter as it rises).
-- **C4 ASYM**: stereo detune between L/R resonators.
+- **C1 Tension**: base resonant frequency (musical scale).
+- **C2 Mass**: increases resonator spacing (modal density/spread).
+- **C3 Damp**: damping amount (darker/shorter as it rises).
+- **C4 Asym**: stereo detune between L/R resonators.
+- **C5 Res**: resonator Q (higher = sharper).
 
 ### 1. Braid (Latent Spectral Braider)
 STFT cross‑spectral braid: magnitudes and phases of L/R are interwoven per‑bin with transient protection. FFT is 1024 with 256‑sample hop and windowed overlap/add.
@@ -35,7 +37,7 @@ STFT cross‑spectral braid: magnitudes and phases of L/R are interwoven per‑b
 - **C3 FORM**: transient protection (higher keeps attacks intact).
 - **C4 TRANS**: additional weave emphasis across bands.
 
-### 2. TapeHyd (Neural Tape Hydraulics)
+### 2. TapeHyd (Tape Hydraulics)
 Stereo tape‑style delay with modulation, soft saturation, and feedback tone shaping. Delay time is modulated by an internal LFO; feedback is low‑passed by head‑gap control.
 - **C1 Drive**: saturation before the delays.
 - **C2 Flow**: modulation depth and speed.
@@ -47,44 +49,45 @@ Stereo spatializer with interaural time differences (ITD), equal‑power panning
 - **C1 Azimuth**: left/right pan center.
 - **C2 Elevation**: dry vs filtered distance blend.
 - **C3 Distance**: mono low‑pass distance (near ↔ far).
-- **C4 SPIN**: rotation amount (adds moving pan).
+- **C4 Spin**: rotation amount (driven by global LFO).
 
-### 4. Formant (Neural Formant Forge)
+### 4. Formant (Formant Forge)
 Three SVF band‑pass formant filters per channel with adjustable spread. ARTIC injects noise into the excitation. BREATH adds “air” (high‑passed input) and stereo formant divergence.
 - **C1 Vowel Pull**: base formant frequency.
 - **C2 Articulation**: formant spacing/spread.
 - **C3 ARTIC**: noise injection amount (default 0).
 - **C4 BREATH**: air mix and stereo divergence.
+- **C5 Res**: formant resonance (Q).
 
-### 5. Diffusion (Neural Diffusion Multiband)
+### 5. Diffusion (Diffusion Multiband)
 Dual short delays with sinusoidal modulation and feedback smear. Color tilts dry contribution for a spectral skew.
 - **C1 Spread**: delay depth/spread.
 - **C2 Color**: spectral tilt between dry and delayed.
 - **C3 Grain**: feedback amount in the diffusers.
 - **C4 Drift**: modulation rate/depth.
 
-### 6. Energy (Neural Energy Shaper)
+### 6. Energy (Energy Shaper)
 Envelope‑linked dynamics shaper. Punch changes attack/release; glue links L/R envelopes; lift adds upward tilt; bias cross‑mixes channels.
 - **C1 Punch**: transient emphasis (faster attack).
 - **C2 Glue**: link between channels.
 - **C3 Lift**: output energy lift.
 - **C4 Bias**: cross‑channel blend.
 
-### 7. Harmonic (Neural Harmonic Cartographer)
+### 7. Harmonic (Harmonic Cartographer)
 Spectral remap of bins into stretched and inharmonic grids, with gated sparsity and optional mirror folding from highs to lows.
 - **C1 Stretch**: harmonic spacing scale.
 - **C2 Inharm**: inharmonic bend amount.
 - **C3 Sparse**: gating/sparsity of partials.
 - **C4 Mirror**: fold highs into lows.
 
-### 8. PhaseLoom (Neural Phase Loom)
+### 8. PhaseLoom (Phase Loom)
 Phase‑domain warp: phase swirl and tilt per bin with optional inter‑channel binding. Stereo control widens or narrows output energy.
 - **C1 Bind**: lock phase between L/R.
 - **C2 Swirl**: sinusoidal phase warp strength.
 - **C3 Tilt**: frequency‑dependent phase skew.
 - **C4 Stereo**: widen/narrow low‑bin energy.
 
-### 9. MicroGran (Neural Micro‑Granulator)
+### 9. MicroGran (Micro‑Granulator)
 Micro‑granulation using short delay taps with windowed holds. Drift adds time jitter (not noise). Blend crossfades dry/grain.
 - **C1 Size**: grain length.
 - **C2 Drift**: random time jitter.
@@ -97,6 +100,28 @@ All‑pass pole chain with feedback for broad, phase‑smeared diffusion. LFO mo
 - **C2 Resonance**: pole feedback intensity (kept stable).
 - **C3 Poles**: 2–128 pole count.
 - **C4 FDBK**: feedback amount.
+
+### 11. CompExp (Compressor/Expander)
+Dynamics shaper with global amount and time scaling. Attack/Decay are scaled by the overall time constant.
+- **C1 Amount**: compression (right) ↔ expansion (left).
+- **C2 Time**: overall time constant scale.
+- **C3 Atk**: attack time (scaled).
+- **C4 Dec**: decay time (scaled).
+
+### 12. PitchShift (Pitch Shifter)
+Dual‑window delay pitch shifter with musical offset.
+- **C1 Pitch**: musical pitch offset (continuous, bipolar).
+- **C2 Scale**: scales the offset depth.
+- **C3 Win**: window length (quality vs latency).
+- **C4 Stereo**: slight L/R spread.
+
+### 13. Reverb (Neurotic Reverb)
+Two‑delay reverb with prime‑spaced taps and cross‑feedback. Overall delay time is log‑scaled.
+- **C1 Time**: overall delay time (0.125×–4×, log scale).
+- **C2 Feedback**: feedback amount.
+- **C3 Cross**: cross‑feed between delay lines.
+- **C4 Taps**: 1–10 taps at prime intervals.
+- **C5 Tilt**: emphasize longer vs shorter taps.
 
 ## Notes
 - LFO affects algorithms where modulation makes sense (e.g., Braid, TapeHyd, Diffusion, PhaseLoom, Binaural, Smear).

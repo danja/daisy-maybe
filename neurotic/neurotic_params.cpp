@@ -28,6 +28,7 @@ void NeuroticParams::Update(kxmx::Bluemchen &hw, const NeuroticState &state, Neu
     runtime.algoIndex = state.algoIndex;
     runtime.c3 = state.c3;
     runtime.c4 = state.c4;
+    runtime.c5 = state.c5;
     runtime.lfoDepth = (state.lfoDepth < 0.005f) ? 0.0f : state.lfoDepth;
     runtime.lfoRate = state.lfoRate;
 

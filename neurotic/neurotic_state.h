@@ -12,6 +12,7 @@ struct NeuroticState
     float lfoRate = 0.2f;
     float c3 = 0.0f;
     float c4 = 0.5f;
+    float c5 = 0.5f;
 };
 
 struct NeuroticRuntime
@@ -24,6 +25,7 @@ struct NeuroticRuntime
     float c2 = 0.0f;
     float c3 = 0.5f;
     float c4 = 0.5f;
+    float c5 = 0.5f;
     float lfoDepth = 0.0f;
     float lfoRate = 0.2f;
     float lfoValue = 0.0f;

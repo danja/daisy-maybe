@@ -18,10 +18,11 @@ private:
     MenuState menuState_{};
     EncoderState encoderState_{};
 
-    MenuItem algoItems_[6]{};
+    MenuItem algoItems_[7]{};
     MenuPage pages_[1]{};
 
     uint32_t lastDisplayUpdateMs_ = 0;
     int algoIndex_ = 0;
     int smearPoles_ = 2;
+    int reverbTaps_ = 1;
 };

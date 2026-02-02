@@ -2,36 +2,52 @@
 
 ## General
 
-Menu items should use capitalised short names where possible, eg. LRATE -> Rate, POLES -> Poles
+If a value of a parameter in the menu is zero, display zero - often this is left blank.
 
-Common Controls :
+Functionality should not be duplicated between CV/Knob controls (one pair of variables) and rotary controller values (another pair or more variables).
 
-* Mix 
-* FB
-* Mod (rename LDEPTH)
-* Rate (rename LRATE)
+Feel free to add more rotary controller/menu parameters if there are any obvious places.
 
-All as a percentage except Rate, which should be expressed as 2 digit decimal Hz
-
-LFO depth doesn't currently zero correctly.
+LFO Rate value is not displayed on the menu - presumably a number formatting error. Check how resonators handles decimal values.
 
 ## Algorithms
 
+### CrossRes
+
+Swap the Mass and Tension controls. Pitch should always be on the first CV/knob.
+Add a Resonance level control to the menu/rotary control.
+
 ### Braid
 
-This doesn't seem to do anything apart from produce a slightly buzzy version of the input. The controls don't appear to have any effect. Review algothithm
+This sounds very crunchy. Is there any way of making it cleaner in the FFT?
 
-## Formant
+### Binaural
 
-Noise/air injection is on the ARTIC control, the control labeled BREATH doesn't appear to do anything
-Noise injection level should default to zero
+Spin should be handled by the main LFO controls.
 
-## Harmonic
+### Formant
 
-Output level is very low compared to other algorithms, and with some crunchy distortion.
+Add a Resonance control to the rotary controller/menu.
 
-## PhaseLoom
+### Harmonic
+
+Output level is very low compared to other algorithms, and with crunchy distortion.
+
+### PhaseLoom
 
 Knobs/CV controls have no effect. Its not clear what this is meant to be doing.
 
+### Smear
 
+Current both CV1/Knob1 and CV2/Knob2 influence pitch. Pitch should only be on the first, resonance on the second.
+
+## New Algorithms
+
+### Compressor/Expander
+
+CV1/Knob1 should control the level of signal compression, CV2/Knob2 control the overall time constant.
+The rotary controller/menu should have Attack and Decay time values which are scaled by the overall time constant.
+
+### Pitch Shifter
+
+CV1/Knob1 will be a musical pitch shift up/down on the input signal for each channel as an offset. CV2/Knob2 will scale the offset value.

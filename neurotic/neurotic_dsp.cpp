@@ -19,7 +19,7 @@ void NeuroticDsp::Process(daisy::AudioHandle::InputBuffer in,
 {
     if (runtime.algoIndex != currentAlgo_)
     {
-        currentAlgo_ = std::clamp(runtime.algoIndex, 0, 10);
+        currentAlgo_ = std::clamp(runtime.algoIndex, 0, 13);
         algos_.Reset(currentAlgo_);
     }
 
@@ -43,7 +43,14 @@ void NeuroticDsp::Process(daisy::AudioHandle::InputBuffer in,
             lfoPhase_ -= 2.0f * 3.14159265358979323846f;
 
         NeuroticRuntime local = runtime;
-        local.lfoValue = std::sin(lfoPhase_);
+        if (runtime.lfoDepth <= 0.0001f)
+        {
+            local.lfoValue = 0.0f;
+        }
+        else
+        {
+            local.lfoValue = std::sin(lfoPhase_);
+        }
 
         float wetL = 0.0f;
         float wetR = 0.0f;

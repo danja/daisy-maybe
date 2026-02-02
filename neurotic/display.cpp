@@ -58,7 +58,7 @@ void RenderDisplay(Bluemchen &hw, const DisplayData &data)
             switch (line.type)
             {
             case MenuItemType::Percent:
-                snprintf(buf, sizeof(buf), "%c%-6s %3d",
+                snprintf(buf, sizeof(buf), "%c%-6.6s %3d",
                          line.selected ? '*' : ' ',
                          line.label,
                          static_cast<int>(line.value * 100.0f + 0.5f));
@@ -66,7 +66,7 @@ void RenderDisplay(Bluemchen &hw, const DisplayData &data)
             case MenuItemType::Ratio:
             {
                 const int ratioCents = static_cast<int>(line.value * 100.0f + 0.5f);
-                snprintf(buf, sizeof(buf), "%c%-6s %d.%02d",
+                snprintf(buf, sizeof(buf), "%c%-6.6s %d.%02d",
                          line.selected ? '*' : ' ',
                          line.label,
                          ratioCents / 100,
@@ -74,7 +74,7 @@ void RenderDisplay(Bluemchen &hw, const DisplayData &data)
                 break;
             }
             case MenuItemType::Int:
-                snprintf(buf, sizeof(buf), "%c%-6s %3d",
+                snprintf(buf, sizeof(buf), "%c%-6.6s %3d",
                          line.selected ? '*' : ' ',
                          line.label,
                          line.intValue);
@@ -82,10 +82,12 @@ void RenderDisplay(Bluemchen &hw, const DisplayData &data)
             case MenuItemType::Hz:
             {
                 const float hz = 0.1f + line.value * 9.8f;
-                snprintf(buf, sizeof(buf), "%c%-6s %4.1f",
+                const int hzTenths = static_cast<int>(hz * 10.0f + 0.5f);
+                snprintf(buf, sizeof(buf), "%c%-6.6s %2d.%01d",
                          line.selected ? '*' : ' ',
                          line.label,
-                         hz);
+                         hzTenths / 10,
+                         hzTenths % 10);
                 break;
             }
             }

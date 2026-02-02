@@ -347,14 +347,15 @@ public:
 
     void Process(float inL, float inR, const NeuroticRuntime &rt, float &outL, float &outR)
     {
-        const float mass = rt.c1;
-        const float tension = rt.c2;
+        const float tension = rt.c1;
+        const float mass = rt.c2;
         const float damping = rt.c3;
         const float asym = rt.c4;
+        const float resonance = rt.c5;
 
         const float base = MapPitch(tension, 36.0f, 95.0f);
         const float spread = 1.0f + mass * 2.5f;
-        const float q = 0.8f + (1.0f - damping) * 8.0f;
+        const float q = 0.6f + resonance * 10.0f;
 
         float sumL = 0.0f;
         float sumR = 0.0f;
@@ -427,17 +428,24 @@ public:
             const float phaseL = std::atan2(imL, reL);
             const float phaseR = std::atan2(imR, reR);
 
-            const float mix = (k < formantBin) ? weave : depth;
+            const float mixBase = (k < formantBin) ? weave : depth;
+            const float hi = static_cast<float>(k) / static_cast<float>(kBins - 1);
+            const float mix = mixBase * (1.0f - 0.4f * hi);
             const float magLNew = Lerp(magL, magR, mix);
             const float magRNew = Lerp(magR, magL, mix);
-            const float phaseShift = mix * protect * 6.0f;
+            const float phaseShift = mix * protect * 4.0f;
             const float phaseLNew = phaseL + ShortestPhaseDelta(phaseL, phaseR) * phaseShift;
             const float phaseRNew = phaseR + ShortestPhaseDelta(phaseR, phaseL) * phaseShift;
 
-            s_spectral.re[0][k] = magLNew * std::cos(phaseLNew);
-            s_spectral.im[0][k] = magLNew * std::sin(phaseLNew);
-            s_spectral.re[1][k] = magRNew * std::cos(phaseRNew);
-            s_spectral.im[1][k] = magRNew * std::sin(phaseRNew);
+            const float targetReL = magLNew * std::cos(phaseLNew);
+            const float targetImL = magLNew * std::sin(phaseLNew);
+            const float targetReR = magRNew * std::cos(phaseRNew);
+            const float targetImR = magRNew * std::sin(phaseRNew);
+
+            s_spectral.re[0][k] = Lerp(reL, targetReL, mix);
+            s_spectral.im[0][k] = Lerp(imL, targetImL, mix);
+            s_spectral.re[1][k] = Lerp(reR, targetReR, mix);
+            s_spectral.im[1][k] = Lerp(imR, targetImR, mix);
         }
 
         s_spectral.InverseToOutput();
@@ -518,9 +526,10 @@ public:
         const float az = rt.c1 * 2.0f - 1.0f;
         const float elev = rt.c2;
         const float dist = rt.c3;
-        const float spin = rt.c4 + rt.lfoValue * rt.lfoDepth * 0.7f;
+        const float spinAmount = rt.c4;
+        const float spin = rt.lfoValue * rt.lfoDepth * (0.3f + spinAmount * 1.4f);
 
-        phase_ += (0.2f + spin * 2.0f) / sampleRate_;
+        phase_ += (0.05f + rt.lfoRate * 2.2f) / sampleRate_;
         if (phase_ > 1.0f)
             phase_ -= 1.0f;
         const float spinPan = std::sin(phase_ * kTwoPi) * spin * 1.6f;
@@ -598,6 +607,13 @@ public:
         const float f1 = base;
         const float f2 = base * spread;
         const float f3 = base * (spread + 0.8f);
+
+        const float res = 0.8f + rt.c5 * 6.0f;
+        for (int i = 0; i < 3; ++i)
+        {
+            formL_[i].SetRes(res);
+            formR_[i].SetRes(res);
+        }
 
         formL_[0].SetFreq(f1);
         formL_[1].SetFreq(f2);
@@ -984,6 +1000,221 @@ private:
     float fbState_[2];
 };
 
+class AlgoNce
+{
+public:
+    void Init(float sampleRate)
+    {
+        sampleRate_ = sampleRate;
+        Reset();
+    }
+
+    void Reset()
+    {
+        envL_ = 0.0f;
+        envR_ = 0.0f;
+    }
+
+    void Process(float inL, float inR, const NeuroticRuntime &rt, float &outL, float &outR)
+    {
+        const float amount = std::clamp(rt.c1 * 2.0f - 1.0f, -1.0f, 1.0f);
+        const float timeScale = MapExpo(rt.c2, 0.05f, 2.0f);
+        const float attackSec = (0.001f + rt.c3 * 0.05f) * timeScale;
+        const float decaySec = (0.01f + rt.c4 * 0.3f) * timeScale;
+
+        const float atkCoef = std::exp(-1.0f / (attackSec * sampleRate_));
+        const float decCoef = std::exp(-1.0f / (decaySec * sampleRate_));
+
+        const float absL = std::fabs(inL);
+        const float absR = std::fabs(inR);
+        envL_ = (absL > envL_) ? (atkCoef * envL_ + (1.0f - atkCoef) * absL)
+                               : (decCoef * envL_ + (1.0f - decCoef) * absL);
+        envR_ = (absR > envR_) ? (atkCoef * envR_ + (1.0f - atkCoef) * absR)
+                               : (decCoef * envR_ + (1.0f - decCoef) * absR);
+
+        const float env = 0.5f * (envL_ + envR_);
+        float gain = 1.0f;
+        if (amount >= 0.0f)
+        {
+            gain = 1.0f / (1.0f + amount * env * 8.0f);
+        }
+        else
+        {
+            const float expand = -amount;
+            gain = 1.0f + expand * std::clamp(0.5f - env, 0.0f, 0.5f) * 4.0f;
+        }
+
+        gain = std::clamp(gain, 0.2f, 2.0f);
+        outL = SoftClip(inL * gain);
+        outR = SoftClip(inR * gain);
+    }
+
+private:
+    float sampleRate_ = 48000.0f;
+    float envL_ = 0.0f;
+    float envR_ = 0.0f;
+};
+
+class AlgoNps
+{
+public:
+    void Init(float sampleRate)
+    {
+        sampleRate_ = sampleRate;
+        Reset();
+    }
+
+    void Reset()
+    {
+        phase_ = 0.0f;
+    }
+
+    void Process(float inL, float inR, const NeuroticRuntime &rt, float &outL, float &outR)
+    {
+        const float baseOffset = (rt.c1 * 2.0f - 1.0f) * 12.0f;
+        const float scale = 0.25f + rt.c2 * 1.75f;
+        const float semis = baseOffset * scale;
+        const float ratio = std::pow(2.0f, semis / 12.0f);
+        const float stereo = (rt.c4 - 0.5f) * 0.15f;
+
+        const float windowSec = 0.02f + rt.c3 * 0.10f;
+        const float windowSamples = windowSec * sampleRate_;
+        const float inc = (1.0f - ratio) / windowSamples;
+
+        phase_ += inc;
+        if (phase_ >= 1.0f)
+            phase_ -= 1.0f;
+        if (phase_ < 0.0f)
+            phase_ += 1.0f;
+
+        const float phaseB = phase_ + 0.5f;
+        const float phaseBWrapped = (phaseB >= 1.0f) ? (phaseB - 1.0f) : phaseB;
+
+        const float winA = 1.0f - std::fabs(phase_ * 2.0f - 1.0f);
+        const float winB = 1.0f - std::fabs(phaseBWrapped * 2.0f - 1.0f);
+        const float winSum = std::max(0.001f, winA + winB);
+
+        s_delayA.Write(inL);
+        s_delayB.Write(inR);
+
+        const float delayA = windowSamples * phase_;
+        const float delayB = windowSamples * phaseBWrapped;
+        const float delayAR = windowSamples * std::clamp(phase_ * (1.0f + stereo), 0.0f, 1.0f);
+        const float delayBR = windowSamples * std::clamp(phaseBWrapped * (1.0f - stereo), 0.0f, 1.0f);
+
+        const float aL = s_delayA.Read(delayA);
+        const float bL = s_delayA.Read(delayB);
+        const float aR = s_delayB.Read(delayAR);
+        const float bR = s_delayB.Read(delayBR);
+
+        const float outBaseL = (aL * winA + bL * winB) / winSum;
+        const float outBaseR = (aR * winA + bR * winB) / winSum;
+
+        outL = Lerp(outBaseL, inL, 0.1f);
+        outR = Lerp(outBaseR, inR, 0.1f);
+
+    }
+
+private:
+    float sampleRate_ = 48000.0f;
+    float phase_ = 0.0f;
+};
+
+class AlgoNrv
+{
+public:
+    void Init(float sampleRate)
+    {
+        sampleRate_ = sampleRate;
+        delayL_.Reset();
+        delayR_.Reset();
+    }
+
+    void Reset()
+    {
+        delayL_.Reset();
+        delayR_.Reset();
+    }
+
+    void Process(float inL, float inR, const NeuroticRuntime &rt, float &outL, float &outR)
+    {
+        const float timeScale = MapExpo(rt.c1, 0.125f, 4.0f);
+        const float baseDelaySamples = std::clamp(sampleRate_ * 0.16f * timeScale, 1.0f, kMaxDelaySamples_);
+        const float cross = Clamp01(rt.c3);
+        const float tilt = Clamp01(rt.c5);
+        const float fb = std::clamp(rt.c2, 0.0f, 0.98f);
+        const int taps = std::clamp(1 + static_cast<int>(rt.c4 * 9.999f), 1, 10);
+
+        static constexpr int kPrimeTaps[10] = {2, 3, 5, 7, 11, 13, 17, 19, 23, 29};
+        static constexpr float kMaxPrime = 29.0f;
+        const float tiltBipolar = tilt * 2.0f - 1.0f;
+
+        float sumL = 0.0f;
+        float sumR = 0.0f;
+        for (int i = 0; i < taps; ++i)
+        {
+            const float ratio = static_cast<float>(kPrimeTaps[i]) / kMaxPrime;
+            const float delayL = baseDelaySamples * ratio;
+            const float delayR = baseDelaySamples * ratio * 1.07f;
+            const float tapL = delayL_.Read(delayL);
+            const float tapR = delayR_.Read(delayR);
+            const float tiltWeight = std::clamp(1.0f + tiltBipolar * (ratio - 0.5f) * 1.6f, 0.25f, 1.75f);
+            sumL += tapL * tiltWeight;
+            sumR += tapR * tiltWeight;
+        }
+
+        const float invTaps = 1.0f / static_cast<float>(taps);
+        sumL *= invTaps;
+        sumR *= invTaps;
+
+        const float crossL = sumL + cross * sumR;
+        const float crossR = sumR + cross * sumL;
+
+        delayL_.Write(SoftClip(inL + crossL * fb));
+        delayR_.Write(SoftClip(inR + crossR * fb));
+
+        outL = crossL;
+        outR = crossR;
+    }
+
+private:
+    struct ReverbDelay
+    {
+        static constexpr size_t kMax = 32000;
+        float buffer[kMax];
+        size_t write;
+
+        void Reset()
+        {
+            std::fill(&buffer[0], &buffer[kMax], 0.0f);
+            write = 0;
+        }
+
+        float Read(float delaySamples) const
+        {
+            const float d = std::clamp(delaySamples, 1.0f, static_cast<float>(kMax - 2));
+            float read = static_cast<float>(write) - d;
+            while (read < 0.0f)
+                read += static_cast<float>(kMax);
+            const size_t i0 = static_cast<size_t>(read);
+            const size_t i1 = (i0 + 1) % kMax;
+            const float frac = read - static_cast<float>(i0);
+            return buffer[i0] + (buffer[i1] - buffer[i0]) * frac;
+        }
+
+        void Write(float v)
+        {
+            buffer[write] = v;
+            write = (write + 1) % kMax;
+        }
+    };
+
+    static constexpr float kMaxDelaySamples_ = static_cast<float>(ReverbDelay::kMax - 2);
+    float sampleRate_ = 48000.0f;
+    ReverbDelay delayL_;
+    ReverbDelay delayR_;
+};
+
 static AlgoNcr s_algoNcr;
 static AlgoLsb s_algoLsb;
 static AlgoNth s_algoNth;
@@ -995,6 +1226,9 @@ static AlgoNhc s_algoNhc;
 static AlgoNpl s_algoNpl;
 static AlgoNmg s_algoNmg;
 static AlgoNsm s_algoNsm;
+static AlgoNce s_algoNce;
+static AlgoNps s_algoNps;
+static AlgoNrv s_algoNrv;
 
 void NeuroticAlgoBank::Init(float sampleRate)
 {
@@ -1013,6 +1247,9 @@ void NeuroticAlgoBank::Init(float sampleRate)
     npl_ = &s_algoNpl;
     nmg_ = &s_algoNmg;
     nsm_ = &s_algoNsm;
+    nce_ = &s_algoNce;
+    nps_ = &s_algoNps;
+    nrv_ = &s_algoNrv;
 
     ncr_->Init(sampleRate_);
     lsb_->Init(sampleRate_);
@@ -1025,6 +1262,9 @@ void NeuroticAlgoBank::Init(float sampleRate)
     npl_->Init(sampleRate_);
     nmg_->Init(sampleRate_);
     nsm_->Init(sampleRate_);
+    nce_->Init(sampleRate_);
+    nps_->Init(sampleRate_);
+    nrv_->Init(sampleRate_);
 }
 
 void NeuroticAlgoBank::Reset(int algoIndex)
@@ -1067,6 +1307,15 @@ void NeuroticAlgoBank::Reset(int algoIndex)
     case 10:
         nsm_->Reset();
         break;
+    case 11:
+        nce_->Reset();
+        break;
+    case 12:
+        nps_->Reset();
+        break;
+    case 13:
+        nrv_->Reset();
+        break;
     default:
         break;
     }
@@ -1108,6 +1357,15 @@ void NeuroticAlgoBank::Process(int algoIndex, float inL, float inR, const Neurot
         break;
     case 10:
         nsm_->Process(inL, inR, rt, outL, outR);
+        break;
+    case 11:
+        nce_->Process(inL, inR, rt, outL, outR);
+        break;
+    case 12:
+        nps_->Process(inL, inR, rt, outL, outR);
+        break;
+    case 13:
+        nrv_->Process(inL, inR, rt, outL, outR);
         break;
     default:
         outL = inL;
