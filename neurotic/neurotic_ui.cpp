@@ -1,12 +1,13 @@
 #include "neurotic_ui.h"
 
 #include "daisy_seed.h"
+#include "neurotic_config.h"
 
 #include <algorithm>
 
 namespace
 {
-constexpr int kAlgoCount = 15;
+constexpr int kAlgoCount = (kNeuroticEnableReverb ? (kNeuroticEnableEuDelay ? 15 : 14) : 13);
 constexpr int kSmearIndex = 10;
 constexpr int kReverbIndex = 13;
 constexpr int kEuDelayIndex = 14;
@@ -119,7 +120,7 @@ void NeuroticUi::UpdateAlgoLabels(NeuroticState &state)
         algoItems_[4].step = 1.0f;
     }
 
-    if (clamped == kReverbIndex)
+    if (kNeuroticEnableReverb && clamped == kReverbIndex)
     {
         reverbTaps_ = std::clamp(1 + static_cast<int>(state.c4 * 9.0f + 0.5f), 1, 10);
         algoItems_[5].type = MenuItemType::Int;
@@ -130,7 +131,7 @@ void NeuroticUi::UpdateAlgoLabels(NeuroticState &state)
         algoItems_[5].step = 1.0f;
     }
 
-    if (clamped == kEuDelayIndex)
+    if (kNeuroticEnableEuDelay && clamped == kEuDelayIndex)
     {
         eudelayScale_ = 0.25f + state.c5 * 3.75f;
         if (menuState_.selectedIndex - 1 != kEuDelayStepsItemIndex)
@@ -197,7 +198,7 @@ void NeuroticUi::Update(kxmx::Bluemchen &hw, NeuroticState &state)
         state.c3 = static_cast<float>(poles - 2) / 126.0f;
     }
 
-    if (state.algoIndex == kReverbIndex)
+    if (kNeuroticEnableReverb && state.algoIndex == kReverbIndex)
     {
         algoItems_[5].type = MenuItemType::Int;
         algoItems_[5].value = nullptr;
@@ -214,7 +215,7 @@ void NeuroticUi::Update(kxmx::Bluemchen &hw, NeuroticState &state)
         state.c4 = static_cast<float>(taps - 1) / 9.0f;
     }
 
-    if (state.algoIndex == kEuDelayIndex)
+    if (kNeuroticEnableEuDelay && state.algoIndex == kEuDelayIndex)
     {
         algoItems_[6].type = MenuItemType::Ratio;
         algoItems_[6].value = &eudelayScale_;
@@ -259,7 +260,7 @@ void NeuroticUi::RenderIfNeeded(kxmx::Bluemchen &hw, const NeuroticState &state,
 
     const MenuPage &page = pages_[menuState_.pageIndex];
     DisplayData data;
-    data.pageTitle = page.title;
+    data.pageTitle = kNeuroticForceMute ? "MUTE" : page.title;
     data.heartbeatOn = heartbeatOn;
     MenuBuildVisibleLines(menuState_, page, data.lines, 3, data.lineCount, data.titleSelected);
     RenderDisplay(hw, data);

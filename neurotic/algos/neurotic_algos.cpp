@@ -1,4 +1,5 @@
 #include "neurotic_algos.h"
+#include "neurotic_config.h"
 
 #include <algorithm>
 #include <cmath>
@@ -322,9 +323,11 @@ SpectralStereo s_spectral;
 SimpleDelay s_delayA;
 SimpleDelay s_delayB;
 
-constexpr size_t kEuDelayMax = 32768;
-alignas(4) float s_eudelayBufferL[kEuDelayMax] __attribute__((section(".sram1_bss")));
-alignas(4) float s_eudelayBufferR[kEuDelayMax] __attribute__((section(".sram1_bss")));
+#if NEUROTIC_ENABLE_EUDELAY
+constexpr size_t kEuDelayMax = 4096;
+alignas(4) float s_eudelayBufferL[kEuDelayMax];
+alignas(4) float s_eudelayBufferR[kEuDelayMax];
+#endif
 }
 
 class AlgoNcr
@@ -1219,6 +1222,7 @@ private:
     ReverbDelay delayR_;
 };
 
+#if NEUROTIC_ENABLE_EUDELAY
 class AlgoNed
 {
 public:
@@ -1232,12 +1236,11 @@ public:
     {
         std::fill(&bufferL_[0], &bufferL_[kMaxDelay], 0.0f);
         std::fill(&bufferR_[0], &bufferR_[kMaxDelay], 0.0f);
-        write_ = 0;
+        writeL_ = 0;
+        writeR_ = 0;
         lastSteps_ = -1;
         lastTaps_ = -1;
         lastOffset_ = -1;
-        cv1Smooth_ = 0.0f;
-        cv2Smooth_ = 0.0f;
         for (int i = 0; i < kMaxSteps; ++i)
         {
             pattern_[i] = false;
@@ -1250,72 +1253,81 @@ public:
         const int bpm = std::clamp(80 + static_cast<int>(rt.c4 * 120.0f + 0.5f), 80, 200);
         const float scale = 0.25f + std::clamp(rt.c5, 0.0f, 1.0f) * 3.75f;
 
-        const float k1 = std::clamp(rt.k1, 0.0f, 1.0f);
-        const float k2 = std::clamp(rt.k2, 0.0f, 1.0f);
-        const float cv1 = std::clamp(rt.cv1, 0.0f, 1.0f);
-        const float cv2 = std::clamp(rt.cv2, 0.0f, 1.0f);
-        const float cv1Adj = (std::fabs(cv1 - 0.5f) < 0.1f) ? 0.5f : cv1;
-        const float cv2Adj = (std::fabs(cv2 - 0.5f) < 0.1f) ? 0.5f : cv2;
+        const float k1 = std::clamp(rt.c1, 0.0f, 1.0f);
+        const float k2 = std::clamp(rt.c2, 0.0f, 1.0f);
 
-        cv1Smooth_ += (cv1Adj - cv1Smooth_) * 0.0015f;
-        cv2Smooth_ += (cv2Adj - cv2Smooth_) * 0.0015f;
+        accumInL_ += inL;
+        accumInR_ += inR;
 
-        const float tapsCenter = static_cast<float>(steps) * 0.5f;
-        const int taps = std::clamp(static_cast<int>(tapsCenter + (k1 - 0.5f) * static_cast<float>(steps) + 0.5f),
-                                    1,
-                                    steps);
-        const int offset = std::clamp(static_cast<int>(k2 * static_cast<float>(steps) + 0.5f), 0, steps);
-
-        const float fine = std::clamp(1.0f + (cv1Smooth_ - 0.5f) * 0.2f, 0.5f, 1.5f);
-        const float totalDelaySec = (60.0f / static_cast<float>(bpm)) * scale * fine;
-        const float totalDelaySamples = std::clamp(totalDelaySec * sampleRate_,
-                                                   1.0f,
-                                                   static_cast<float>(kMaxDelay - 2));
-        const float stepSamples = std::max(4.0f, totalDelaySamples / static_cast<float>(steps));
-
-        if (steps != lastSteps_ || taps != lastTaps_ || offset != lastOffset_)
+        if (++downsampleCounter_ >= kDownsample)
         {
-            BuildPattern(steps, taps);
-            lastSteps_ = steps;
-            lastTaps_ = taps;
-            lastOffset_ = offset;
+            downsampleCounter_ = 0;
+            const float inAvgL = accumInL_ * kDownsampleRecip_;
+            const float inAvgR = accumInR_ * kDownsampleRecip_;
+            accumInL_ = 0.0f;
+            accumInR_ = 0.0f;
+
+            const int taps = std::clamp(1 + static_cast<int>(k1 * static_cast<float>(steps - 1) + 0.5f), 1, steps);
+            const int offset = std::clamp(static_cast<int>(k2 * static_cast<float>(steps - 1) + 0.5f), 0, steps - 1);
+
+            const float fine = 1.0f;
+            const float baseDelaySec = (60.0f / static_cast<float>(bpm));
+            const float desiredDelaySec = baseDelaySec * scale * fine;
+            const float maxDelaySec = (static_cast<float>(kMaxDelay - 2) * static_cast<float>(kDownsample) * 0.9f) / sampleRate_;
+            const float totalDelaySec = maxDelaySec * (1.0f - std::exp(-desiredDelaySec / maxDelaySec));
+            const float totalDelaySamples = std::max(1.0f, totalDelaySec * sampleRate_);
+            const float cappedDelay = totalDelaySamples / static_cast<float>(kDownsample);
+            const float stepSamples = std::max(4.0f, cappedDelay / static_cast<float>(steps));
+
+            if (steps != lastSteps_ || taps != lastTaps_ || offset != lastOffset_)
+            {
+                BuildPattern(steps, taps);
+                lastSteps_ = steps;
+                lastTaps_ = taps;
+                lastOffset_ = offset;
+            }
+
+            float sumL = 0.0f;
+            float sumR = 0.0f;
+            int activeTaps = 0;
+
+            for (int i = 0; i < steps; ++i)
+            {
+                if (!pattern_[i])
+                    continue;
+                const int idx = (i + offset) % steps;
+                const float delaySamples = std::max(1.0f, stepSamples * static_cast<float>(idx + 1));
+                const float tapL = Read(bufferL_, writeL_, delaySamples);
+                const float tapR = Read(bufferR_, writeR_, delaySamples);
+                sumL += tapL;
+                sumR += tapR;
+                activeTaps++;
+            }
+
+            const float tapNorm = (activeTaps > 0) ? (1.0f / static_cast<float>(activeTaps)) : 0.0f;
+            sumL *= tapNorm;
+            sumR *= tapNorm;
+
+            const float fb = std::clamp(rt.fb, 0.0f, 0.75f);
+            const float writeL = std::clamp(inAvgL + sumL * fb, -1.0f, 1.0f);
+            const float writeR = std::clamp(inAvgR + sumR * fb, -1.0f, 1.0f);
+            Write(bufferL_, writeL_, writeL);
+            Write(bufferR_, writeR_, writeR);
+
+            const float outGain = 1.5f;
+            lastOutL_ = std::clamp(sumL * outGain, -1.0f, 1.0f);
+            lastOutR_ = std::clamp(sumR * outGain, -1.0f, 1.0f);
         }
 
-        float sumL = 0.0f;
-        float sumR = 0.0f;
-        int activeTaps = 0;
-        for (int i = 0; i < steps; ++i)
-        {
-            if (!pattern_[i])
-                continue;
-            const int idx = (i + offset) % steps;
-            const float delaySamples = std::max(1.0f, stepSamples * static_cast<float>(idx));
-            const float tapL = Read(bufferL_, delaySamples);
-            const float tapR = Read(bufferR_, delaySamples);
-            sumL += tapL;
-            sumR += tapR;
-            activeTaps++;
-        }
-
-        const float tapNorm = (activeTaps > 0) ? (0.7f / static_cast<float>(activeTaps)) : 0.0f;
-        sumL *= tapNorm;
-        sumR *= tapNorm;
-
-        const float fbControl = std::clamp((cv2Smooth_ - 0.5f) * 2.0f, 0.0f, 1.0f);
-        float fb = std::clamp(fbControl, 0.0f, 0.75f);
-        const float writeL = std::clamp(inL + sumL * fb, -1.0f, 1.0f);
-        const float writeR = std::clamp(inR + sumR * fb, -1.0f, 1.0f);
-        Write(bufferL_, writeL);
-        Write(bufferR_, writeR);
-
-        const float outGain = 1.5f;
-        outL = std::clamp(sumL * outGain, -1.0f, 1.0f);
-        outR = std::clamp(sumR * outGain, -1.0f, 1.0f);
+        outL = lastOutL_;
+        outR = lastOutR_;
     }
 
 private:
     static constexpr int kMaxSteps = 16;
     static constexpr size_t kMaxDelay = kEuDelayMax;
+    static constexpr int kDownsample = 8;
+    static constexpr float kDownsampleRecip_ = 1.0f / static_cast<float>(kDownsample);
 
     void BuildPattern(int steps, int taps)
     {
@@ -1331,10 +1343,10 @@ private:
         }
     }
 
-    float Read(const float *buffer, float delaySamples) const
+    float Read(const float *buffer, size_t write, float delaySamples) const
     {
         const float d = std::clamp(delaySamples, 1.0f, static_cast<float>(kMaxDelay - 2));
-        float read = static_cast<float>(write_) - d;
+        float read = static_cast<float>(write) - d;
         while (read < 0.0f)
             read += static_cast<float>(kMaxDelay);
         const size_t i0 = static_cast<size_t>(read);
@@ -1343,23 +1355,28 @@ private:
         return buffer[i0] + (buffer[i1] - buffer[i0]) * frac;
     }
 
-    void Write(float *buffer, float v)
+    void Write(float *buffer, size_t &write, float v)
     {
-        buffer[write_] = v;
-        write_ = (write_ + 1) % kMaxDelay;
+        buffer[write] = v;
+        write = (write + 1) % kMaxDelay;
     }
 
     float sampleRate_ = 48000.0f;
     int lastSteps_ = -1;
     int lastTaps_ = -1;
     int lastOffset_ = -1;
-    float cv1Smooth_ = 0.0f;
-    float cv2Smooth_ = 0.0f;
+    int downsampleCounter_ = 0;
+    float lastOutL_ = 0.0f;
+    float lastOutR_ = 0.0f;
+    float accumInL_ = 0.0f;
+    float accumInR_ = 0.0f;
     bool pattern_[kMaxSteps];
-    size_t write_ = 0;
+    size_t writeL_ = 0;
+    size_t writeR_ = 0;
     float *bufferL_ = s_eudelayBufferL;
     float *bufferR_ = s_eudelayBufferR;
 };
+#endif
 
 static AlgoNcr s_algoNcr;
 static AlgoLsb s_algoLsb;
@@ -1375,7 +1392,9 @@ static AlgoNsm s_algoNsm;
 static AlgoNce s_algoNce;
 static AlgoNps s_algoNps;
 static AlgoNrv s_algoNrv;
+#if NEUROTIC_ENABLE_EUDELAY
 static AlgoNed s_algoNed;
+#endif
 
 void NeuroticAlgoBank::Init(float sampleRate)
 {
@@ -1383,6 +1402,10 @@ void NeuroticAlgoBank::Init(float sampleRate)
     s_spectral.Init();
     s_delayA.Reset();
     s_delayB.Reset();
+#if NEUROTIC_ENABLE_EUDELAY
+    std::fill(&s_eudelayBufferL[0], &s_eudelayBufferL[kEuDelayMax], 0.0f);
+    std::fill(&s_eudelayBufferR[0], &s_eudelayBufferR[kEuDelayMax], 0.0f);
+#endif
     ncr_ = &s_algoNcr;
     lsb_ = &s_algoLsb;
     nth_ = &s_algoNth;
@@ -1397,7 +1420,9 @@ void NeuroticAlgoBank::Init(float sampleRate)
     nce_ = &s_algoNce;
     nps_ = &s_algoNps;
     nrv_ = &s_algoNrv;
+#if NEUROTIC_ENABLE_EUDELAY
     ned_ = &s_algoNed;
+#endif
 
     ncr_->Init(sampleRate_);
     lsb_->Init(sampleRate_);
@@ -1413,7 +1438,9 @@ void NeuroticAlgoBank::Init(float sampleRate)
     nce_->Init(sampleRate_);
     nps_->Init(sampleRate_);
     nrv_->Init(sampleRate_);
+#if NEUROTIC_ENABLE_EUDELAY
     ned_->Init(sampleRate_);
+#endif
 }
 
 void NeuroticAlgoBank::Reset(int algoIndex)
@@ -1465,9 +1492,11 @@ void NeuroticAlgoBank::Reset(int algoIndex)
     case 13:
         nrv_->Reset();
         break;
+#if NEUROTIC_ENABLE_EUDELAY
     case 14:
         ned_->Reset();
         break;
+#endif
     default:
         break;
     }
@@ -1519,9 +1548,11 @@ void NeuroticAlgoBank::Process(int algoIndex, float inL, float inR, const Neurot
     case 13:
         nrv_->Process(inL, inR, rt, outL, outR);
         break;
+#if NEUROTIC_ENABLE_EUDELAY
     case 14:
         ned_->Process(inL, inR, rt, outL, outR);
         break;
+#endif
     default:
         outL = inL;
         outR = inR;

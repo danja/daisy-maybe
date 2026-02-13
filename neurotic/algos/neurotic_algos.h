@@ -1,5 +1,6 @@
 #pragma once
 
+#include "neurotic_config.h"
 #include "daisysp.h"
 #include "neurotic_state.h"
 
@@ -17,7 +18,9 @@ class AlgoNsm;
 class AlgoNce;
 class AlgoNps;
 class AlgoNrv;
+#if NEUROTIC_ENABLE_EUDELAY
 class AlgoNed;
+#endif
 
 class NeuroticAlgoBank
 {
@@ -43,5 +46,7 @@ private:
     AlgoNce *nce_ = nullptr;
     AlgoNps *nps_ = nullptr;
     AlgoNrv *nrv_ = nullptr;
+#if NEUROTIC_ENABLE_EUDELAY
     AlgoNed *ned_ = nullptr;
+#endif
 };

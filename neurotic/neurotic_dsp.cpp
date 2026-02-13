@@ -1,4 +1,5 @@
 #include "neurotic_dsp.h"
+#include "neurotic_config.h"
 
 #include <algorithm>
 
@@ -17,16 +18,19 @@ void NeuroticDsp::Process(daisy::AudioHandle::InputBuffer in,
                           size_t size,
                           const NeuroticRuntime &runtime)
 {
-    for (size_t i = 0; i < size; ++i)
+    if (kNeuroticForceMute)
     {
-        out[0][i] = 0.0f;
-        out[1][i] = 0.0f;
+        for (size_t i = 0; i < size; ++i)
+        {
+            out[0][i] = 0.0f;
+            out[1][i] = 0.0f;
+        }
+        return;
     }
-    return;
 
     if (runtime.algoIndex != currentAlgo_)
     {
-        currentAlgo_ = std::clamp(runtime.algoIndex, 0, 14);
+        currentAlgo_ = std::clamp(runtime.algoIndex, 0, kNeuroticEnableReverb ? (kNeuroticEnableEuDelay ? 14 : 13) : 12);
         algos_.Reset(currentAlgo_);
     }
 
@@ -37,16 +41,6 @@ void NeuroticDsp::Process(daisy::AudioHandle::InputBuffer in,
     const float fb = std::clamp(runtime.fb, 0.0f, 0.98f);
     const float lfoHz = 0.1f + runtime.lfoRate * 9.8f;
     const float lfoInc = (2.0f * 3.14159265358979323846f) * lfoHz / sampleRate_;
-
-    if (mix <= 0.001f)
-    {
-        for (size_t i = 0; i < size; ++i)
-        {
-            out[0][i] = 0.0f;
-            out[1][i] = 0.0f;
-        }
-        return;
-    }
 
     for (size_t i = 0; i < size; ++i)
     {
