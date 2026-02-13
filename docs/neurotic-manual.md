@@ -124,14 +124,13 @@ Two‑delay reverb with prime‑spaced taps and cross‑feedback. Overall delay 
 - **C5 Tilt**: emphasize longer vs shorter taps.
 
 ### 14. EuDelay (Euclidean Delay)
-Delay taps spaced using Euclidean rhythm. CV2 supplies feedback; Knob 2 offsets the tap pattern.
-- **C1 Taps**: number of taps (Knob 1, centered at Steps/2).
-- **C2 Offset**: tap offset in steps (Knob 2).
+Delay taps spaced using Euclidean rhythm. Taps and offsets follow the shared C1/C2 control path.
+- **C1 Taps**: number of taps (1–Steps).
+- **C2 Offset**: tap offset in steps (0–Steps‑1).
 - **C3 Steps**: number of steps (2–16).
 - **C4 BPM**: tempo (80–200).
 - **C5 Scale**: ratio of delay time to BPM.
-- **CV1**: fine delay time adjustment.
-- **CV2**: feedback from tap sum.
+- **Feed**: global feedback amount for EuDelay (same as other algorithms).
 
 ## Notes
 - LFO affects algorithms where modulation makes sense (e.g., Braid, TapeHyd, Diffusion, PhaseLoom, Binaural, Smear).
