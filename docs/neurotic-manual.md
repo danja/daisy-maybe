@@ -1,6 +1,6 @@
 # Neurotic Manual
 
-Neurotic is a 14‑algorithm, neural‑inspired processor for the kxmx_bluemchen hardware. Each algorithm has its own page and name at the top line. The **title line** is the algorithm selector (rotate encoder to change). Below the title are shared controls plus two or three algorithm‑specific parameters.
+Neurotic is a 15‑algorithm processor for the kxmx_bluemchen hardware. Each algorithm has its own page and name at the top line. The **title line** is the algorithm selector (rotate encoder to change). Below the title are shared controls plus two or three algorithm‑specific parameters.
 
 ## Hardware Controls
 - **Knob 1 + CV1 (C1)**: Primary performance control (algorithm‑specific).
@@ -122,6 +122,16 @@ Two‑delay reverb with prime‑spaced taps and cross‑feedback. Overall delay 
 - **C3 Cross**: cross‑feed between delay lines.
 - **C4 Taps**: 1–10 taps at prime intervals.
 - **C5 Tilt**: emphasize longer vs shorter taps.
+
+### 14. EuDelay (Euclidean Delay)
+Delay taps spaced using Euclidean rhythm. CV2 supplies feedback; Knob 2 offsets the tap pattern.
+- **C1 Taps**: number of taps (Knob 1, centered at Steps/2).
+- **C2 Offset**: tap offset in steps (Knob 2).
+- **C3 Steps**: number of steps (2–16).
+- **C4 BPM**: tempo (80–200).
+- **C5 Scale**: ratio of delay time to BPM.
+- **CV1**: fine delay time adjustment.
+- **CV2**: feedback from tap sum.
 
 ## Notes
 - LFO affects algorithms where modulation makes sense (e.g., Braid, TapeHyd, Diffusion, PhaseLoom, Binaural, Smear).

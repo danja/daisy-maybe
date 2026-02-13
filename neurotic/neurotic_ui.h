@@ -25,4 +25,7 @@ private:
     int algoIndex_ = 0;
     int smearPoles_ = 2;
     int reverbTaps_ = 1;
+    int eudelaySteps_ = 8;
+    int eudelayBpm_ = 140;
+    float eudelayScale_ = 1.0f;
 };

@@ -17,7 +17,7 @@ void RenderDisplay(Bluemchen &hw, const DisplayData &data)
     }
     else
     {
-        snprintf(buf, sizeof(buf), "%c%s%c",
+        snprintf(buf, sizeof(buf), "%c%.8s%c",
                  data.titleSelected ? '*' : ' ',
                  data.pageTitle,
                  data.heartbeatOn ? '.' : ' ');
@@ -58,7 +58,7 @@ void RenderDisplay(Bluemchen &hw, const DisplayData &data)
             switch (line.type)
             {
             case MenuItemType::Percent:
-                snprintf(buf, sizeof(buf), "%c%-6.6s %3d",
+                snprintf(buf, sizeof(buf), "%c%-5.5s %3d",
                          line.selected ? '*' : ' ',
                          line.label,
                          static_cast<int>(line.value * 100.0f + 0.5f));
@@ -66,15 +66,17 @@ void RenderDisplay(Bluemchen &hw, const DisplayData &data)
             case MenuItemType::Ratio:
             {
                 const int ratioCents = static_cast<int>(line.value * 100.0f + 0.5f);
-                snprintf(buf, sizeof(buf), "%c%-6.6s %d.%02d",
+                const int ratioWhole = ratioCents / 100;
+                const int ratioFrac = ratioCents % 100;
+                snprintf(buf, sizeof(buf), "%c%-5.5s %1d.%02d",
                          line.selected ? '*' : ' ',
                          line.label,
-                         ratioCents / 100,
-                         ratioCents % 100);
+                         ratioWhole,
+                         ratioFrac);
                 break;
             }
             case MenuItemType::Int:
-                snprintf(buf, sizeof(buf), "%c%-6.6s %3d",
+                snprintf(buf, sizeof(buf), "%c%-5.5s %3d",
                          line.selected ? '*' : ' ',
                          line.label,
                          line.intValue);
@@ -83,7 +85,7 @@ void RenderDisplay(Bluemchen &hw, const DisplayData &data)
             {
                 const float hz = 0.1f + line.value * 9.8f;
                 const int hzTenths = static_cast<int>(hz * 10.0f + 0.5f);
-                snprintf(buf, sizeof(buf), "%c%-6.6s %2d.%01d",
+                snprintf(buf, sizeof(buf), "%c%-5.5s %1d.%01d",
                          line.selected ? '*' : ' ',
                          line.label,
                          hzTenths / 10,

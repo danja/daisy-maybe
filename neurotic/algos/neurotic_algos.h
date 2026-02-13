@@ -17,6 +17,7 @@ class AlgoNsm;
 class AlgoNce;
 class AlgoNps;
 class AlgoNrv;
+class AlgoNed;
 
 class NeuroticAlgoBank
 {
@@ -42,4 +43,5 @@ private:
     AlgoNce *nce_ = nullptr;
     AlgoNps *nps_ = nullptr;
     AlgoNrv *nrv_ = nullptr;
+    AlgoNed *ned_ = nullptr;
 };

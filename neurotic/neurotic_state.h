@@ -30,6 +30,11 @@ struct NeuroticRuntime
     float lfoRate = 0.2f;
     float lfoValue = 0.0f;
 
+    float k1 = 0.0f;
+    float k2 = 0.0f;
+    float cv1 = 0.0f;
+    float cv2 = 0.0f;
+
     uint16_t rawK1 = 0;
     uint16_t rawK2 = 0;
     uint16_t rawCv1 = 0;

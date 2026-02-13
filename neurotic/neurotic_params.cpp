@@ -14,6 +14,11 @@ void NeuroticParams::Update(kxmx::Bluemchen &hw, const NeuroticState &state, Neu
     runtime.rawCv1 = hw.controls[kxmx::Bluemchen::CTRL_3].GetRawValue();
     runtime.rawCv2 = hw.controls[kxmx::Bluemchen::CTRL_4].GetRawValue();
 
+    runtime.k1 = pot1;
+    runtime.k2 = pot2;
+    runtime.cv1 = cv1;
+    runtime.cv2 = cv2;
+
     const float pot1Bipolar = (pot1 - 0.5f) * 2.0f;
     const float pot2Bipolar = (pot2 - 0.5f) * 2.0f;
     const float cv1Bipolar = (cv1 - 0.5f) * 2.0f;

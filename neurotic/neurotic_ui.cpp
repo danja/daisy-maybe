@@ -6,11 +6,15 @@
 
 namespace
 {
-constexpr int kAlgoCount = 14;
+constexpr int kAlgoCount = 15;
 constexpr int kSmearIndex = 10;
 constexpr int kReverbIndex = 13;
+constexpr int kEuDelayIndex = 14;
 constexpr int kSmearPolesItemIndex = 4;
 constexpr int kReverbTapsItemIndex = 5;
+constexpr int kEuDelayStepsItemIndex = 4;
+constexpr int kEuDelayBpmItemIndex = 5;
+constexpr int kEuDelayScaleItemIndex = 6;
 
 const char *kAlgoParamLabels[][3] = {
     {"Damp", "Asym", "Res"},    // 0 NCR
@@ -27,6 +31,7 @@ const char *kAlgoParamLabels[][3] = {
     {"Atk", "Dec", ""},         // 11 NCE
     {"Win", "Stereo", ""},      // 12 NPS
     {"Cross", "Taps", "Tilt"},  // 13 NRV
+    {"Steps", "BPM", "Scale"},  // 14 EUD
 };
 
 const char *kAlgoNames[] = {
@@ -44,6 +49,7 @@ const char *kAlgoNames[] = {
     "CompExp",
     "PitchShift",
     "Reverb",
+    "EuDelay",
 };
 }
 
@@ -92,6 +98,13 @@ void NeuroticUi::UpdateAlgoLabels(NeuroticState &state)
     algoItems_[5].max = 1.0f;
     algoItems_[5].step = 0.02f;
 
+    algoItems_[6].type = MenuItemType::Percent;
+    algoItems_[6].value = &state.c5;
+    algoItems_[6].intValue = nullptr;
+    algoItems_[6].min = 0.0f;
+    algoItems_[6].max = 1.0f;
+    algoItems_[6].step = 0.02f;
+
     if (clamped == kSmearIndex)
     {
         if (menuState_.selectedIndex - 1 != kSmearPolesItemIndex)
@@ -115,6 +128,39 @@ void NeuroticUi::UpdateAlgoLabels(NeuroticState &state)
         algoItems_[5].min = 1.0f;
         algoItems_[5].max = 10.0f;
         algoItems_[5].step = 1.0f;
+    }
+
+    if (clamped == kEuDelayIndex)
+    {
+        eudelayScale_ = 0.25f + state.c5 * 3.75f;
+        if (menuState_.selectedIndex - 1 != kEuDelayStepsItemIndex)
+        {
+            eudelaySteps_ = std::clamp(2 + static_cast<int>(state.c3 * 14.0f + 0.5f), 2, 16);
+        }
+        if (menuState_.selectedIndex - 1 != kEuDelayBpmItemIndex)
+        {
+            eudelayBpm_ = std::clamp(80 + static_cast<int>(state.c4 * 120.0f + 0.5f), 80, 200);
+        }
+        algoItems_[4].type = MenuItemType::Int;
+        algoItems_[4].value = nullptr;
+        algoItems_[4].intValue = &eudelaySteps_;
+        algoItems_[4].min = 2.0f;
+        algoItems_[4].max = 16.0f;
+        algoItems_[4].step = 1.0f;
+
+        algoItems_[5].type = MenuItemType::Int;
+        algoItems_[5].value = nullptr;
+        algoItems_[5].intValue = &eudelayBpm_;
+        algoItems_[5].min = 80.0f;
+        algoItems_[5].max = 200.0f;
+        algoItems_[5].step = 1.0f;
+
+        algoItems_[6].type = MenuItemType::Ratio;
+        algoItems_[6].value = &eudelayScale_;
+        algoItems_[6].intValue = nullptr;
+        algoItems_[6].min = 0.25f;
+        algoItems_[6].max = 4.0f;
+        algoItems_[6].step = 0.05f;
     }
 
     algoIndex_ = clamped;
@@ -166,6 +212,35 @@ void NeuroticUi::Update(kxmx::Bluemchen &hw, NeuroticState &state)
         }
         const int taps = std::clamp(reverbTaps_, 1, 10);
         state.c4 = static_cast<float>(taps - 1) / 9.0f;
+    }
+
+    if (state.algoIndex == kEuDelayIndex)
+    {
+        algoItems_[6].type = MenuItemType::Ratio;
+        algoItems_[6].value = &eudelayScale_;
+        algoItems_[6].intValue = nullptr;
+        algoItems_[6].min = 0.25f;
+        algoItems_[6].max = 4.0f;
+        algoItems_[6].step = 0.05f;
+
+        if (menuState_.selectedIndex - 1 != kEuDelayStepsItemIndex)
+        {
+            eudelaySteps_ = std::clamp(2 + static_cast<int>(state.c3 * 14.0f + 0.5f), 2, 16);
+        }
+        if (menuState_.selectedIndex - 1 != kEuDelayBpmItemIndex)
+        {
+            eudelayBpm_ = std::clamp(80 + static_cast<int>(state.c4 * 120.0f + 0.5f), 80, 200);
+        }
+        if (menuState_.selectedIndex - 1 != kEuDelayScaleItemIndex)
+        {
+            eudelayScale_ = 0.25f + state.c5 * 3.75f;
+        }
+        const int steps = std::clamp(eudelaySteps_, 2, 16);
+        const int bpm = std::clamp(eudelayBpm_, 80, 200);
+        state.c3 = static_cast<float>(steps - 2) / 14.0f;
+        state.c4 = static_cast<float>(bpm - 80) / 120.0f;
+        const float scale = std::clamp(eudelayScale_, 0.25f, 4.0f);
+        state.c5 = (scale - 0.25f) / 3.75f;
     }
 
     if (state.algoIndex != algoIndex_)
