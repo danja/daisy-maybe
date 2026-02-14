@@ -1253,8 +1253,8 @@ public:
         const int bpm = std::clamp(80 + static_cast<int>(rt.c4 * 120.0f + 0.5f), 80, 200);
         const float scale = 0.25f + std::clamp(rt.c5, 0.0f, 1.0f) * 3.75f;
 
-        const float k1 = std::clamp(rt.c1, 0.0f, 1.0f);
-        const float k2 = std::clamp(rt.c2, 0.0f, 1.0f);
+        const float tapControl = std::clamp(rt.c1, 0.0f, 1.0f);
+        const float offsetControl = std::clamp(rt.c2, 0.0f, 1.0f);
 
         accumInL_ += inL;
         accumInR_ += inR;
@@ -1267,8 +1267,8 @@ public:
             accumInL_ = 0.0f;
             accumInR_ = 0.0f;
 
-            const int taps = std::clamp(1 + static_cast<int>(k1 * static_cast<float>(steps - 1) + 0.5f), 1, steps);
-            const int offset = std::clamp(static_cast<int>(k2 * static_cast<float>(steps - 1) + 0.5f), 0, steps - 1);
+            const int taps = std::clamp(1 + static_cast<int>(tapControl * static_cast<float>(steps - 1) + 0.5f), 1, steps);
+            const int offset = std::clamp(static_cast<int>(offsetControl * static_cast<float>(steps - 1) + 0.5f), 0, steps - 1);
 
             const float fine = 1.0f;
             const float baseDelaySec = (60.0f / static_cast<float>(bpm));
