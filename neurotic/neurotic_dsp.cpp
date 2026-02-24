@@ -30,7 +30,7 @@ void NeuroticDsp::Process(daisy::AudioHandle::InputBuffer in,
 
     if (runtime.algoIndex != currentAlgo_)
     {
-        currentAlgo_ = std::clamp(runtime.algoIndex, 0, kNeuroticEnableReverb ? (kNeuroticEnableEuDelay ? 14 : 13) : 12);
+        currentAlgo_ = std::clamp(runtime.algoIndex, 0, kNeuroticEnableReverb ? (kNeuroticEnableEuDelay ? 18 : 17) : 14);
         algos_.Reset(currentAlgo_);
     }
 

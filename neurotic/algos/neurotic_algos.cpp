@@ -1378,6 +1378,772 @@ private:
 };
 #endif
 
+class AlgoNwl
+{
+public:
+    void Init(float sampleRate)
+    {
+        sampleRate_ = sampleRate;
+        Reset();
+    }
+
+    void Reset()
+    {
+        std::fill(&inBlockL_[0], &inBlockL_[kBlock], 0.0f);
+        std::fill(&inBlockR_[0], &inBlockR_[kBlock], 0.0f);
+        std::fill(&outBlockL_[0], &outBlockL_[kBlock], 0.0f);
+        std::fill(&outBlockR_[0], &outBlockR_[kBlock], 0.0f);
+        std::fill(&fbCoeffsL_[0], &fbCoeffsL_[kBlock], 0.0f);
+        std::fill(&fbCoeffsR_[0], &fbCoeffsR_[kBlock], 0.0f);
+        blockIndex_ = 0;
+    }
+
+    void Process(float inL, float inR, const NeuroticRuntime &rt, float &outL, float &outR)
+    {
+        inBlockL_[blockIndex_] = inL;
+        inBlockR_[blockIndex_] = inR;
+        outL = outBlockL_[blockIndex_];
+        outR = outBlockR_[blockIndex_];
+
+        blockIndex_++;
+        if (blockIndex_ >= kBlock)
+        {
+            blockIndex_ = 0;
+            ProcessBlock(inBlockL_, outBlockL_, fbCoeffsL_, rt, 1.0f);
+            ProcessBlock(inBlockR_, outBlockR_, fbCoeffsR_, rt, -1.0f);
+        }
+    }
+
+private:
+    static constexpr int kBlock = 32;
+    static constexpr float kInvSqrt2 = 0.70710678118f;
+    static constexpr float kLeak = 0.95f;
+
+    void ForwardHaar(float *x, float *tmp) const
+    {
+        int len = kBlock;
+        for (int level = 0; level < 3; ++level)
+        {
+            const int half = len / 2;
+            for (int i = 0; i < half; ++i)
+            {
+                const float a = x[2 * i];
+                const float b = x[2 * i + 1];
+                tmp[i] = (a + b) * kInvSqrt2;
+                tmp[half + i] = (a - b) * kInvSqrt2;
+            }
+            for (int i = 0; i < len; ++i)
+            {
+                x[i] = tmp[i];
+            }
+            len = half;
+        }
+    }
+
+    void InverseHaar(float *x, float *tmp) const
+    {
+        for (int len = 8; len <= kBlock; len *= 2)
+        {
+            const int half = len / 2;
+            for (int i = 0; i < half; ++i)
+            {
+                const float a = x[i];
+                const float d = x[half + i];
+                tmp[2 * i] = (a + d) * kInvSqrt2;
+                tmp[2 * i + 1] = (a - d) * kInvSqrt2;
+            }
+            for (int i = 0; i < len; ++i)
+            {
+                x[i] = tmp[i];
+            }
+        }
+    }
+
+    void ProcessBlock(const float *in, float *out, float *fb, const NeuroticRuntime &rt, float stereoPolarity)
+    {
+        float coeffs[kBlock];
+        float tmp[kBlock];
+        for (int i = 0; i < kBlock; ++i)
+        {
+            coeffs[i] = in[i];
+        }
+
+        ForwardHaar(coeffs, tmp);
+
+        float *a3 = &coeffs[0];
+        float *d3 = &coeffs[4];
+        float *d2 = &coeffs[8];
+        float *d1 = &coeffs[16];
+
+        const float amount = Clamp01(rt.c1);
+        const float feedback = std::clamp(rt.c2, 0.0f, 0.8f);
+        const float damping = Clamp01(rt.c3);
+        const float diffusion = Clamp01(rt.c4);
+        const float tilt = Clamp01(rt.c5);
+
+        const float up1 = amount * (0.15f + 0.20f * tilt);
+        const float up2 = amount * (0.10f + 0.30f * tilt);
+        const float up3 = amount * (0.05f + 0.40f * tilt);
+
+        for (int i = 0; i < 4; ++i)
+        {
+            d3[i] += a3[i] * up1;
+        }
+        for (int i = 0; i < 8; ++i)
+        {
+            d2[i] += d3[i >> 1] * up2;
+        }
+        for (int i = 0; i < 16; ++i)
+        {
+            d1[i] += d2[i >> 1] * up3;
+        }
+
+        const float dampD3 = 1.0f - 0.25f * damping;
+        const float dampD2 = 1.0f - 0.40f * damping;
+        const float dampD1 = 1.0f - 0.60f * damping;
+        for (int i = 0; i < 4; ++i)
+        {
+            d3[i] *= dampD3;
+        }
+        for (int i = 0; i < 8; ++i)
+        {
+            d2[i] *= dampD2;
+        }
+        for (int i = 0; i < 16; ++i)
+        {
+            d1[i] *= dampD1;
+        }
+
+        for (int i = 0; i < kBlock; ++i)
+        {
+            float v = coeffs[i] + fb[i] * feedback;
+            if (i >= 16 && (i & 1))
+            {
+                const float decor = -v * stereoPolarity;
+                v = Lerp(v, decor, diffusion * 0.35f);
+            }
+            coeffs[i] = SoftClip(v);
+            fb[i] = coeffs[i] * kLeak;
+        }
+
+        InverseHaar(coeffs, tmp);
+
+        for (int i = 0; i < kBlock; ++i)
+        {
+            out[i] = std::clamp(coeffs[i] * 0.85f, -1.0f, 1.0f);
+        }
+    }
+
+    float sampleRate_ = 48000.0f;
+    int blockIndex_ = 0;
+    float inBlockL_[kBlock];
+    float inBlockR_[kBlock];
+    float outBlockL_[kBlock];
+    float outBlockR_[kBlock];
+    float fbCoeffsL_[kBlock];
+    float fbCoeffsR_[kBlock];
+};
+
+class AlgoNws
+{
+public:
+    void Init(float sampleRate)
+    {
+        sampleRate_ = sampleRate;
+        Reset();
+    }
+
+    void Reset()
+    {
+        std::fill(&inBlockL_[0], &inBlockL_[kBlock], 0.0f);
+        std::fill(&inBlockR_[0], &inBlockR_[kBlock], 0.0f);
+        std::fill(&outBlockL_[0], &outBlockL_[kBlock], 0.0f);
+        std::fill(&outBlockR_[0], &outBlockR_[kBlock], 0.0f);
+        std::fill(&smoothCoeffsL_[0], &smoothCoeffsL_[kBlock], 0.0f);
+        std::fill(&smoothCoeffsR_[0], &smoothCoeffsR_[kBlock], 0.0f);
+        // Start non-identity so the effect is obvious immediately on selection.
+        permute_[0] = 1;
+        permute_[1] = 2;
+        permute_[2] = 0;
+        blockIndex_ = 0;
+        blockCounter_ = 0;
+        prng_ = 0x9E3779B9u;
+    }
+
+    void Process(float inL, float inR, const NeuroticRuntime &rt, float &outL, float &outR)
+    {
+        inBlockL_[blockIndex_] = inL;
+        inBlockR_[blockIndex_] = inR;
+        outL = outBlockL_[blockIndex_];
+        outR = outBlockR_[blockIndex_];
+
+        blockIndex_++;
+        if (blockIndex_ >= kBlock)
+        {
+            blockIndex_ = 0;
+            ProcessBlock(inBlockL_, outBlockL_, smoothCoeffsL_, rt, 0.0f);
+            ProcessBlock(inBlockR_, outBlockR_, smoothCoeffsR_, rt, 0.11f + 0.33f * Clamp01(rt.c4));
+        }
+    }
+
+private:
+    static constexpr int kBlock = 32;
+    static constexpr float kInvSqrt2 = 0.70710678118f;
+
+    void ForwardHaar(float *x, float *tmp) const
+    {
+        int len = kBlock;
+        for (int level = 0; level < 3; ++level)
+        {
+            const int half = len / 2;
+            for (int i = 0; i < half; ++i)
+            {
+                const float a = x[2 * i];
+                const float b = x[2 * i + 1];
+                tmp[i] = (a + b) * kInvSqrt2;
+                tmp[half + i] = (a - b) * kInvSqrt2;
+            }
+            for (int i = 0; i < len; ++i)
+            {
+                x[i] = tmp[i];
+            }
+            len = half;
+        }
+    }
+
+    void InverseHaar(float *x, float *tmp) const
+    {
+        for (int len = 8; len <= kBlock; len *= 2)
+        {
+            const int half = len / 2;
+            for (int i = 0; i < half; ++i)
+            {
+                const float a = x[i];
+                const float d = x[half + i];
+                tmp[2 * i] = (a + d) * kInvSqrt2;
+                tmp[2 * i + 1] = (a - d) * kInvSqrt2;
+            }
+            for (int i = 0; i < len; ++i)
+            {
+                x[i] = tmp[i];
+            }
+        }
+    }
+
+    uint32_t NextRand()
+    {
+        uint32_t x = prng_;
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        prng_ = x;
+        return x;
+    }
+
+    void UpdatePermutation(float stereoOffset)
+    {
+        const int mode = static_cast<int>(NextRand() % 5u);
+        switch (mode)
+        {
+        case 0:
+            permute_[0] = 0;
+            permute_[1] = 2;
+            permute_[2] = 1;
+            break;
+        case 1:
+            permute_[0] = 1;
+            permute_[1] = 0;
+            permute_[2] = 2;
+            break;
+        case 2:
+            permute_[0] = 1;
+            permute_[1] = 2;
+            permute_[2] = 0;
+            break;
+        case 3:
+            permute_[0] = 2;
+            permute_[1] = 0;
+            permute_[2] = 1;
+            break;
+        default:
+            permute_[0] = 2;
+            permute_[1] = 1;
+            permute_[2] = 0;
+            break;
+        }
+
+        const int rot = static_cast<int>(stereoOffset * 2.99f + 0.5f) % 3;
+        if (rot != 0)
+        {
+            int p[3] = {permute_[0], permute_[1], permute_[2]};
+            for (int i = 0; i < 3; ++i)
+            {
+                permute_[i] = p[(i + rot) % 3];
+            }
+        }
+    }
+
+    void ProcessBlock(const float *in, float *out, float *smooth, const NeuroticRuntime &rt, float stereoOffset)
+    {
+        float coeffs[kBlock];
+        float tmp[kBlock];
+        for (int i = 0; i < kBlock; ++i)
+        {
+            coeffs[i] = in[i];
+        }
+
+        ForwardHaar(coeffs, tmp);
+
+        const float scramble = 0.35f + 0.65f * Clamp01(rt.c1);
+        const float rate = Clamp01(rt.c2);
+        // Bias toward smoother default behavior around center settings.
+        const float smoothing = std::pow(Clamp01(rt.c3), 0.75f);
+        const float spread = Clamp01(rt.c4);
+        const float tilt = Clamp01(rt.c5);
+
+        const int updateEvery = 1 + static_cast<int>((1.0f - rate) * (1.0f - rate) * 23.0f + 0.5f);
+        if (++blockCounter_ >= updateEvery)
+        {
+            blockCounter_ = 0;
+            UpdatePermutation(spread + stereoOffset);
+        }
+
+        float bands[3][kBlock];
+        for (int i = 0; i < kBlock; ++i)
+        {
+            bands[0][i] = 0.0f;
+            bands[1][i] = 0.0f;
+            bands[2][i] = 0.0f;
+        }
+        for (int i = 0; i < 4; ++i)
+        {
+            bands[0][i] = coeffs[i];
+        }
+        for (int i = 4; i < 16; ++i)
+        {
+            bands[1][i] = coeffs[i];
+        }
+        for (int i = 16; i < 32; ++i)
+        {
+            bands[2][i] = coeffs[i];
+        }
+
+        const float tiltFine = 1.0f + 0.8f * tilt;
+        const float tiltCoarse = 1.0f + 0.8f * (1.0f - tilt);
+        auto RemapBand = [&](int srcBand, int srcLen, int srcStart, int dstPos, int dstLen) -> float {
+            const int srcPos = (dstPos * srcLen) / dstLen;
+            return bands[srcBand][srcStart + srcPos];
+        };
+
+        for (int i = 0; i < 4; ++i)
+        {
+            const float src = bands[0][i];
+            float dst = src;
+            if (permute_[0] == 0)
+                dst = bands[0][i];
+            else if (permute_[0] == 1)
+                dst = RemapBand(1, 12, 4, i, 4);
+            else
+                dst = RemapBand(2, 16, 16, i, 4);
+            coeffs[i] = Lerp(src, dst, scramble) * tiltCoarse;
+        }
+        for (int i = 4; i < 16; ++i)
+        {
+            const float src = bands[1][i];
+            const int dstPos = i - 4;
+            float dst = src;
+            if (permute_[1] == 0)
+                dst = RemapBand(0, 4, 0, dstPos, 12);
+            else if (permute_[1] == 1)
+                dst = bands[1][i];
+            else
+                dst = RemapBand(2, 16, 16, dstPos, 12);
+            coeffs[i] = Lerp(src, dst, scramble);
+        }
+        for (int i = 16; i < 32; ++i)
+        {
+            const float src = bands[2][i];
+            const int dstPos = i - 16;
+            float dst = src;
+            if (permute_[2] == 0)
+                dst = RemapBand(0, 4, 0, dstPos, 16);
+            else if (permute_[2] == 1)
+                dst = RemapBand(1, 12, 4, dstPos, 16);
+            else
+                dst = bands[2][i];
+            coeffs[i] = Lerp(src, dst, scramble) * tiltFine;
+        }
+
+        const float alpha = 0.93f - 0.86f * smoothing;
+        for (int i = 0; i < kBlock; ++i)
+        {
+            smooth[i] += (coeffs[i] - smooth[i]) * alpha;
+            coeffs[i] = SoftClip(smooth[i]);
+        }
+
+        InverseHaar(coeffs, tmp);
+
+        for (int i = 0; i < kBlock; ++i)
+        {
+            const float dryKeep = 0.20f * (1.0f - scramble);
+            out[i] = std::clamp(coeffs[i] * 1.16f + in[i] * dryKeep, -1.0f, 1.0f);
+        }
+    }
+
+    float sampleRate_ = 48000.0f;
+    int blockIndex_ = 0;
+    int blockCounter_ = 0;
+    uint32_t prng_ = 0x9E3779B9u;
+    int permute_[3] = {0, 1, 2};
+    float inBlockL_[kBlock];
+    float inBlockR_[kBlock];
+    float outBlockL_[kBlock];
+    float outBlockR_[kBlock];
+    float smoothCoeffsL_[kBlock];
+    float smoothCoeffsR_[kBlock];
+};
+
+class AlgoNwg
+{
+public:
+    void Init(float sampleRate)
+    {
+        sampleRate_ = sampleRate;
+        Reset();
+    }
+
+    void Reset()
+    {
+        std::fill(&inBlockL_[0], &inBlockL_[kBlock], 0.0f);
+        std::fill(&inBlockR_[0], &inBlockR_[kBlock], 0.0f);
+        std::fill(&outBlockL_[0], &outBlockL_[kBlock], 0.0f);
+        std::fill(&outBlockR_[0], &outBlockR_[kBlock], 0.0f);
+        gateGain_[0] = 1.0f;
+        gateGain_[1] = 1.0f;
+        gateGain_[2] = 1.0f;
+        step_ = 0;
+        blockIndex_ = 0;
+    }
+
+    void Process(float inL, float inR, const NeuroticRuntime &rt, float &outL, float &outR)
+    {
+        inBlockL_[blockIndex_] = inL;
+        inBlockR_[blockIndex_] = inR;
+        outL = outBlockL_[blockIndex_];
+        outR = outBlockR_[blockIndex_];
+
+        blockIndex_++;
+        if (blockIndex_ >= kBlock)
+        {
+            blockIndex_ = 0;
+            ProcessBlock(inBlockL_, inBlockR_, outBlockL_, outBlockR_, rt);
+        }
+    }
+
+private:
+    static constexpr int kBlock = 32;
+    static constexpr int kSteps = 16;
+    static constexpr float kInvSqrt2 = 0.70710678118f;
+
+    void ForwardHaar(float *x, float *tmp) const
+    {
+        int len = kBlock;
+        for (int level = 0; level < 3; ++level)
+        {
+            const int half = len / 2;
+            for (int i = 0; i < half; ++i)
+            {
+                const float a = x[2 * i];
+                const float b = x[2 * i + 1];
+                tmp[i] = (a + b) * kInvSqrt2;
+                tmp[half + i] = (a - b) * kInvSqrt2;
+            }
+            for (int i = 0; i < len; ++i)
+            {
+                x[i] = tmp[i];
+            }
+            len = half;
+        }
+    }
+
+    void InverseHaar(float *x, float *tmp) const
+    {
+        for (int len = 8; len <= kBlock; len *= 2)
+        {
+            const int half = len / 2;
+            for (int i = 0; i < half; ++i)
+            {
+                const float a = x[i];
+                const float d = x[half + i];
+                tmp[2 * i] = (a + d) * kInvSqrt2;
+                tmp[2 * i + 1] = (a - d) * kInvSqrt2;
+            }
+            for (int i = 0; i < len; ++i)
+            {
+                x[i] = tmp[i];
+            }
+        }
+    }
+
+    bool EuclidHit(int step, int fills, int total, int rotation) const
+    {
+        if (fills <= 0)
+            return false;
+        const int idx = (step + rotation) % total;
+        return ((idx * fills) % total) < fills;
+    }
+
+    void ProcessBlock(const float *inL, const float *inR, float *outL, float *outR, const NeuroticRuntime &rt)
+    {
+        float coeffL[kBlock];
+        float coeffR[kBlock];
+        float tmp[kBlock];
+        for (int i = 0; i < kBlock; ++i)
+        {
+            coeffL[i] = inL[i];
+            coeffR[i] = inR[i];
+        }
+
+        ForwardHaar(coeffL, tmp);
+        ForwardHaar(coeffR, tmp);
+
+        float energy[3] = {0.0f, 0.0f, 0.0f};
+        for (int i = 0; i < 4; ++i)
+        {
+            energy[0] += std::fabs(coeffL[i]) + std::fabs(coeffR[i]);
+        }
+        for (int i = 4; i < 16; ++i)
+        {
+            energy[1] += std::fabs(coeffL[i]) + std::fabs(coeffR[i]);
+        }
+        for (int i = 16; i < 32; ++i)
+        {
+            energy[2] += std::fabs(coeffL[i]) + std::fabs(coeffR[i]);
+        }
+        energy[0] /= 8.0f;
+        energy[1] /= 24.0f;
+        energy[2] /= 32.0f;
+
+        const float threshold = 0.002f + 0.06f * Clamp01(rt.c1);
+        const int fills = std::clamp(1 + static_cast<int>(Clamp01(rt.c2) * 15.0f + 0.5f), 1, 16);
+        // Bias toward snappier gate releases around center settings.
+        const float release = std::pow(Clamp01(rt.c3), 1.35f);
+        const float weighting = Clamp01(rt.c4) * 2.0f - 1.0f;
+        const float tilt = Clamp01(rt.c5);
+
+        const float tCoarse = std::clamp(threshold * (1.1f + 0.8f * weighting), 0.002f, 0.9f);
+        const float tMid = std::clamp(threshold, 0.002f, 0.9f);
+        const float tFine = std::clamp(threshold * (1.1f - 0.8f * weighting), 0.002f, 0.9f);
+
+        const float attackCoef = 0.65f;
+        const float releaseCoef = 0.28f - 0.24f * release;
+
+        const int fineRotate = 2 + static_cast<int>(tilt * 5.0f + 0.5f);
+        const int midRotate = 1 + static_cast<int>(tilt * 2.0f + 0.5f);
+        const int coarseRotate = static_cast<int>(tilt * 3.0f + 0.5f);
+
+        const bool gateCoarse = EuclidHit(step_, fills, kSteps, coarseRotate) && energy[0] > tCoarse;
+        const bool gateMid = EuclidHit(step_, fills, kSteps, midRotate) && energy[1] > tMid;
+        const bool gateFine = EuclidHit(step_, fills, kSteps, fineRotate) && energy[2] > tFine;
+        step_ = (step_ + 1) % kSteps;
+
+        const float floor = 0.14f + 0.24f * release;
+        const float target[3] = {
+            gateCoarse ? 1.0f : floor,
+            gateMid ? 1.0f : floor,
+            gateFine ? 1.0f : floor,
+        };
+
+        for (int b = 0; b < 3; ++b)
+        {
+            const float coef = (target[b] > gateGain_[b]) ? attackCoef : releaseCoef;
+            gateGain_[b] += (target[b] - gateGain_[b]) * coef;
+        }
+
+        for (int i = 0; i < 4; ++i)
+        {
+            coeffL[i] *= gateGain_[0];
+            coeffR[i] *= gateGain_[0];
+        }
+        for (int i = 4; i < 16; ++i)
+        {
+            coeffL[i] *= gateGain_[1];
+            coeffR[i] *= gateGain_[1];
+        }
+        for (int i = 16; i < 32; ++i)
+        {
+            coeffL[i] *= gateGain_[2];
+            coeffR[i] *= gateGain_[2];
+        }
+
+        InverseHaar(coeffL, tmp);
+        InverseHaar(coeffR, tmp);
+
+        const float makeup = 1.35f + 0.45f * (1.0f - Clamp01(rt.c2));
+        for (int i = 0; i < kBlock; ++i)
+        {
+            outL[i] = std::clamp(SoftClip(coeffL[i] * makeup), -1.0f, 1.0f);
+            outR[i] = std::clamp(SoftClip(coeffR[i] * makeup), -1.0f, 1.0f);
+        }
+    }
+
+    float sampleRate_ = 48000.0f;
+    int blockIndex_ = 0;
+    int step_ = 0;
+    float gateGain_[3] = {1.0f, 1.0f, 1.0f};
+    float inBlockL_[kBlock];
+    float inBlockR_[kBlock];
+    float outBlockL_[kBlock];
+    float outBlockR_[kBlock];
+};
+
+class AlgoNbz
+{
+public:
+    void Init(float sampleRate)
+    {
+        sampleRate_ = sampleRate;
+        midBpL_.Init(sampleRate_);
+        midBpR_.Init(sampleRate_);
+        Reset();
+    }
+
+    void Reset()
+    {
+        lpStateL_ = 0.0f;
+        lpStateR_ = 0.0f;
+        phaseL_ = 0.0f;
+        phaseR_ = 0.5f;
+        highApX1L_ = 0.0f;
+        highApY1L_ = 0.0f;
+        highApX2L_ = 0.0f;
+        highApY2L_ = 0.0f;
+        highApX1R_ = 0.0f;
+        highApY1R_ = 0.0f;
+        highApX2R_ = 0.0f;
+        highApY2R_ = 0.0f;
+        s_delayA.Reset();
+        s_delayB.Reset();
+        midBpL_.SetRes(0.45f);
+        midBpR_.SetRes(0.45f);
+    }
+
+    void Process(float inL, float inR, const NeuroticRuntime &rt, float &outL, float &outR)
+    {
+        const float crossoverHz = MapExpo(rt.c3, 50.0f, 250.0f);
+        // Use a proper one-pole coefficient; previous linear form made cutoff effectively far too low.
+        const float alpha = std::clamp(1.0f - std::exp(-kTwoPi * crossoverHz / sampleRate_), 0.0f, 1.0f);
+
+        lpStateL_ += (inL - lpStateL_) * alpha;
+        lpStateR_ += (inR - lpStateR_) * alpha;
+        const float lowL = lpStateL_;
+        const float lowR = lpStateR_;
+        const float highL = inL - lowL;
+        const float highR = inR - lowR;
+
+        const float bassMix = Clamp01(rt.c1);
+        const float highMix = Clamp01(rt.c2);
+        const float midHz = MapExpo(rt.c4, 220.0f, 4200.0f);
+        const float drive = 1.0f + Clamp01(rt.c5) * 9.0f;
+        const float distMix = Clamp01(rt.c5);
+        const float lfo = std::clamp(rt.lfoValue * Clamp01(rt.lfoDepth), -1.0f, 1.0f);
+
+        midBpL_.SetFreq(midHz);
+        midBpR_.SetFreq(midHz);
+        midBpL_.Process(inL);
+        midBpR_.Process(inR);
+        const float midL = midBpL_.Band();
+        const float midR = midBpR_.Band();
+        const float midDistL = std::tanh(midL * drive) * distMix;
+        const float midDistR = std::tanh(midR * drive) * distMix;
+
+        // Drive the octave path from mostly-low content, with a little full-band injection
+        // so sub generation is still obvious on thinner sources.
+        const float lowSubL = PitchDownOctave(lowL + inL * 0.35f, phaseL_, s_delayA);
+        const float lowSubR = PitchDownOctave(lowR + inR * 0.35f, phaseR_, s_delayB);
+
+        const float apA1L = std::clamp(0.25f + 0.45f * (0.5f + 0.5f * lfo), 0.05f, 0.85f);
+        const float apA2L = std::clamp(0.20f + 0.40f * (0.5f + 0.5f * lfo), 0.05f, 0.85f);
+        const float apA1R = std::clamp(0.25f + 0.45f * (0.5f - 0.5f * lfo), 0.05f, 0.85f);
+        const float apA2R = std::clamp(0.20f + 0.40f * (0.5f - 0.5f * lfo), 0.05f, 0.85f);
+        const float highShiftL = Allpass(Allpass(highL, apA1L, highApX1L_, highApY1L_), apA2L, highApX2L_, highApY2L_);
+        const float highShiftR = Allpass(Allpass(highR, apA1R, highApX1R_, highApY1R_), apA2R, highApX2R_, highApY2R_);
+
+        // At full control, pivot from original low band toward strong octave-down low band.
+        const float subBoostL = SoftClip(lowSubL * 6.4f);
+        const float subBoostR = SoftClip(lowSubR * 6.4f);
+        const float bassEffectL = (subBoostL * 6.0f) - (lowL * 0.45f);
+        const float bassEffectR = (subBoostR * 6.0f) - (lowR * 0.45f);
+
+        // Replace low/high bands instead of quietly layering on top of dry,
+        // so C1/C2 can push to a clearly transformed sound.
+        auto BlendWithHardMode = [](float dryBand, float wetBand, float control) -> float {
+            const float c = Clamp01(control);
+            if (c > 0.75f)
+            {
+                return wetBand;
+            }
+            return Lerp(dryBand, wetBand, c / 0.75f);
+        };
+
+        const float lowOutL = BlendWithHardMode(lowL, bassEffectL * 4.6f, bassMix);
+        const float highOutL = BlendWithHardMode(highL, highShiftL * 2.2f, highMix);
+
+        // Keep sub amount tied to C1 on both channels so C1=0 fully removes sub.
+        const float lowOutR = BlendWithHardMode(lowR, bassEffectR * 4.6f, bassMix);
+        const float highOutR = BlendWithHardMode(highR, highShiftR * 2.2f, highMix);
+
+        const float dryMidL = inL - lowL - highL;
+        const float dryMidR = inR - lowR - highR;
+        const float coreL = dryMidL + lowOutL + highOutL;
+        const float coreR = dryMidR + lowOutR + highOutR;
+
+        outL = std::clamp(SoftClip(coreL + 1.15f * midDistL), -1.0f, 1.0f);
+        outR = std::clamp(SoftClip(coreR + 1.15f * midDistR), -1.0f, 1.0f);
+    }
+
+private:
+    float PitchDownOctave(float in, float &phase, SimpleDelay &delay)
+    {
+        constexpr float ratio = 0.5f;
+        const float windowSec = 0.035f;
+        const float windowSamples = windowSec * sampleRate_;
+        const float inc = (1.0f - ratio) / windowSamples;
+
+        phase += inc;
+        if (phase >= 1.0f)
+            phase -= 1.0f;
+        if (phase < 0.0f)
+            phase += 1.0f;
+
+        const float phaseB = (phase >= 0.5f) ? (phase - 0.5f) : (phase + 0.5f);
+        const float winA = 1.0f - std::fabs(phase * 2.0f - 1.0f);
+        const float winB = 1.0f - std::fabs(phaseB * 2.0f - 1.0f);
+        const float winSum = std::max(0.001f, winA + winB);
+
+        delay.Write(in);
+        const float a = delay.Read(windowSamples * phase);
+        const float b = delay.Read(windowSamples * phaseB);
+        return (a * winA + b * winB) / winSum;
+    }
+
+    float sampleRate_ = 48000.0f;
+    float lpStateL_ = 0.0f;
+    float lpStateR_ = 0.0f;
+    float phaseL_ = 0.0f;
+    float phaseR_ = 0.5f;
+    float highApX1L_ = 0.0f;
+    float highApY1L_ = 0.0f;
+    float highApX2L_ = 0.0f;
+    float highApY2L_ = 0.0f;
+    float highApX1R_ = 0.0f;
+    float highApY1R_ = 0.0f;
+    float highApX2R_ = 0.0f;
+    float highApY2R_ = 0.0f;
+    daisysp::Svf midBpL_;
+    daisysp::Svf midBpR_;
+};
+
 static AlgoNcr s_algoNcr;
 static AlgoLsb s_algoLsb;
 static AlgoNth s_algoNth;
@@ -1395,6 +2161,10 @@ static AlgoNrv s_algoNrv;
 #if NEUROTIC_ENABLE_EUDELAY
 static AlgoNed s_algoNed;
 #endif
+static AlgoNwl s_algoNwl;
+static AlgoNws s_algoNws;
+static AlgoNwg s_algoNwg;
+static AlgoNbz s_algoNbz;
 
 void NeuroticAlgoBank::Init(float sampleRate)
 {
@@ -1423,6 +2193,10 @@ void NeuroticAlgoBank::Init(float sampleRate)
 #if NEUROTIC_ENABLE_EUDELAY
     ned_ = &s_algoNed;
 #endif
+    nwl_ = &s_algoNwl;
+    nws_ = &s_algoNws;
+    nwg_ = &s_algoNwg;
+    nbz_ = &s_algoNbz;
 
     ncr_->Init(sampleRate_);
     lsb_->Init(sampleRate_);
@@ -1441,6 +2215,10 @@ void NeuroticAlgoBank::Init(float sampleRate)
 #if NEUROTIC_ENABLE_EUDELAY
     ned_->Init(sampleRate_);
 #endif
+    nwl_->Init(sampleRate_);
+    nws_->Init(sampleRate_);
+    nwg_->Init(sampleRate_);
+    nbz_->Init(sampleRate_);
 }
 
 void NeuroticAlgoBank::Reset(int algoIndex)
@@ -1497,6 +2275,18 @@ void NeuroticAlgoBank::Reset(int algoIndex)
         ned_->Reset();
         break;
 #endif
+    case 15:
+        nwl_->Reset();
+        break;
+    case 16:
+        nws_->Reset();
+        break;
+    case 17:
+        nwg_->Reset();
+        break;
+    case 18:
+        nbz_->Reset();
+        break;
     default:
         break;
     }
@@ -1553,6 +2343,18 @@ void NeuroticAlgoBank::Process(int algoIndex, float inL, float inR, const Neurot
         ned_->Process(inL, inR, rt, outL, outR);
         break;
 #endif
+    case 15:
+        nwl_->Process(inL, inR, rt, outL, outR);
+        break;
+    case 16:
+        nws_->Process(inL, inR, rt, outL, outR);
+        break;
+    case 17:
+        nwg_->Process(inL, inR, rt, outL, outR);
+        break;
+    case 18:
+        nbz_->Process(inL, inR, rt, outL, outR);
+        break;
     default:
         outL = inL;
         outR = inR;

@@ -7,15 +7,17 @@
 
 namespace
 {
-constexpr int kAlgoCount = (kNeuroticEnableReverb ? (kNeuroticEnableEuDelay ? 15 : 14) : 13);
+constexpr int kAlgoCount = (kNeuroticEnableReverb ? (kNeuroticEnableEuDelay ? 19 : 18) : 15);
 constexpr int kSmearIndex = 10;
 constexpr int kReverbIndex = 13;
 constexpr int kEuDelayIndex = 14;
+constexpr int kBazzerIndex = 18;
 constexpr int kSmearPolesItemIndex = 4;
 constexpr int kReverbTapsItemIndex = 5;
 constexpr int kEuDelayStepsItemIndex = 4;
 constexpr int kEuDelayBpmItemIndex = 5;
 constexpr int kEuDelayScaleItemIndex = 6;
+constexpr int kBazzerXovrItemIndex = 4;
 
 const char *kAlgoParamLabels[][3] = {
     {"Damp", "Asym", "Res"},    // 0 NCR
@@ -33,6 +35,10 @@ const char *kAlgoParamLabels[][3] = {
     {"Win", "Stereo", ""},      // 12 NPS
     {"Cross", "Taps", "Tilt"},  // 13 NRV
     {"Steps", "BPM", "Scale"},  // 14 EUD
+    {"Damp", "Diff", "Tilt"},   // 15 NWL
+    {"Smth", "Offs", "Tilt"},   // 16 NWS
+    {"Rel", "Bias", "Tilt"},    // 17 NWG
+    {"Xovr", "Mid", "Drive"},   // 18 NBZ
 };
 
 const char *kAlgoNames[] = {
@@ -51,6 +57,10 @@ const char *kAlgoNames[] = {
     "PitchShift",
     "Reverb",
     "EuDelay",
+    "WavLadr",
+    "WavScram",
+    "WavGate",
+    "Bazzer",
 };
 }
 
@@ -164,6 +174,20 @@ void NeuroticUi::UpdateAlgoLabels(NeuroticState &state)
         algoItems_[6].step = 0.05f;
     }
 
+    if (kNeuroticEnableEuDelay && clamped == kBazzerIndex)
+    {
+        if (menuState_.selectedIndex - 1 != kBazzerXovrItemIndex)
+        {
+            bazzerXovrHz_ = std::clamp(50 + static_cast<int>(state.c3 * 200.0f + 0.5f), 50, 250);
+        }
+        algoItems_[4].type = MenuItemType::Int;
+        algoItems_[4].value = nullptr;
+        algoItems_[4].intValue = &bazzerXovrHz_;
+        algoItems_[4].min = 50.0f;
+        algoItems_[4].max = 250.0f;
+        algoItems_[4].step = 1.0f;
+    }
+
     algoIndex_ = clamped;
 }
 
@@ -242,6 +266,23 @@ void NeuroticUi::Update(kxmx::Bluemchen &hw, NeuroticState &state)
         state.c4 = static_cast<float>(bpm - 80) / 120.0f;
         const float scale = std::clamp(eudelayScale_, 0.25f, 4.0f);
         state.c5 = (scale - 0.25f) / 3.75f;
+    }
+
+    if (kNeuroticEnableEuDelay && state.algoIndex == kBazzerIndex)
+    {
+        algoItems_[4].type = MenuItemType::Int;
+        algoItems_[4].value = nullptr;
+        algoItems_[4].intValue = &bazzerXovrHz_;
+        algoItems_[4].min = 50.0f;
+        algoItems_[4].max = 250.0f;
+        algoItems_[4].step = 1.0f;
+
+        if (menuState_.selectedIndex - 1 != kBazzerXovrItemIndex)
+        {
+            bazzerXovrHz_ = std::clamp(50 + static_cast<int>(state.c3 * 200.0f + 0.5f), 50, 250);
+        }
+        const int xovrHz = std::clamp(bazzerXovrHz_, 50, 250);
+        state.c3 = static_cast<float>(xovrHz - 50) / 200.0f;
     }
 
     if (state.algoIndex != algoIndex_)

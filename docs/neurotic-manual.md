@@ -1,6 +1,6 @@
 # Neurotic Manual
 
-Neurotic is a 15‑algorithm processor for the kxmx_bluemchen hardware. Each algorithm has its own page and name at the top line. The **title line** is the algorithm selector (rotate encoder to change). Below the title are shared controls plus two or three algorithm‑specific parameters.
+Neurotic is a 19‑algorithm processor for the kxmx_bluemchen hardware. Each algorithm has its own page and name at the top line. The **title line** is the algorithm selector (rotate encoder to change). Below the title are shared controls plus two or three algorithm‑specific parameters.
 
 ## Hardware Controls
 - **Knob 1 + CV1 (C1)**: Primary performance control (algorithm‑specific).
@@ -124,13 +124,47 @@ Two‑delay reverb with prime‑spaced taps and cross‑feedback. Overall delay 
 - **C5 Tilt**: emphasize longer vs shorter taps.
 
 ### 14. EuDelay (Euclidean Delay)
-Delay taps spaced using Euclidean rhythm. Taps and offsets follow the shared C1/C2 control path.
+Delay taps spaced using Euclidean rhythm. Taps and offsets follow the shared C1/C2 control path (Knob + CV bipolar mapping).
 - **C1 Taps**: number of taps (1–Steps).
 - **C2 Offset**: tap offset in steps (0–Steps‑1).
 - **C3 Steps**: number of steps (2–16).
 - **C4 BPM**: tempo (80–200).
 - **C5 Scale**: ratio of delay time to BPM.
 - **Feed**: global feedback amount for EuDelay (same as other algorithms).
+- **Implementation note**: internal delay memory runs at 8x downsample for longer effective delay time.
+
+### 15. WavLadr (Wavelet Shimmer Ladder Lite)
+Block-based Haar wavelet ladder that shifts energy from coarse to fine scales with bounded feedback.
+- **C1 Amount**: shimmer ladder amount (Knob 1 + CV1).
+- **C2 Feedback**: ladder feedback depth (Knob 2 + CV2).
+- **C3 Damp**: high-band damping to control brightness and ringing.
+- **C4 Diff**: stereo decorrelation in fine bands.
+- **C5 Tilt**: emphasizes higher ladder stages.
+
+### 16. WavScram (Wavelet Scale Scrambler)
+Block-based Haar wavelet remap that scrambles coarse/mid/fine bands with smoothing.
+- **C1 Amount**: scramble depth (identity -> fully remapped).
+- **C2 Rate**: permutation change rate.
+- **C3 Smth**: smoothing of coefficient updates (higher = smoother).
+- **C4 Offs**: stereo offset between left/right remap.
+- **C5 Tilt**: coarse/fine spectral tilt after remap.
+
+### 17. WavGate (Wavelet Gate Matrix)
+Per-band wavelet gate driven by Euclidean hit logic and band energy thresholds.
+- **C1 Threshold**: gate sensitivity.
+- **C2 Density**: Euclidean hit density.
+- **C3 Rel**: gate release time.
+- **C4 Bias**: scale weighting (coarse <-> fine emphasis).
+- **C5 Tilt**: band rotation/tilt of rhythmic gating.
+
+### 18. Bazzer (Crossover + Sub + Mid Drive)
+Stereo crossover processor with octave-down bass reinforcement, high-band enhancement, and band-passed distortion.
+- **C1 BassMix**: level of octave-down low-band reinforcement (both channels).
+- **C2 HighMix**: level of added high band (both channels).
+- **C3 Xovr**: crossover frequency for low/high split (50–250 Hz).
+- **C4 Mid**: center frequency of broad mid band-pass feeding distortion.
+- **C5 Drive**: tanh distortion drive and blend for the mid band.
+- **Mod/LFO**: modulates a stereo all-pass phase shift on the high band for moving width (with opposite L/R phase motion).
 
 ## Notes
 - LFO affects algorithms where modulation makes sense (e.g., Braid, TapeHyd, Diffusion, PhaseLoom, Binaural, Smear).

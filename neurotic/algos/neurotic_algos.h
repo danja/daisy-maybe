@@ -21,6 +21,10 @@ class AlgoNrv;
 #if NEUROTIC_ENABLE_EUDELAY
 class AlgoNed;
 #endif
+class AlgoNwl;
+class AlgoNws;
+class AlgoNwg;
+class AlgoNbz;
 
 class NeuroticAlgoBank
 {
@@ -49,4 +53,8 @@ private:
 #if NEUROTIC_ENABLE_EUDELAY
     AlgoNed *ned_ = nullptr;
 #endif
+    AlgoNwl *nwl_ = nullptr;
+    AlgoNws *nws_ = nullptr;
+    AlgoNwg *nwg_ = nullptr;
+    AlgoNbz *nbz_ = nullptr;
 };

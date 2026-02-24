@@ -28,4 +28,5 @@ private:
     int eudelaySteps_ = 8;
     int eudelayBpm_ = 140;
     float eudelayScale_ = 1.0f;
+    int bazzerXovrHz_ = 120;
 };
