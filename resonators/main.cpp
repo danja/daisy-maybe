@@ -57,6 +57,8 @@ namespace
     {
         float ratio = 1.0f;
         float mix = 1.0f;
+        int size = 1;
+        int taps = 1;
     };
 
     struct FilterParams
@@ -70,6 +72,34 @@ namespace
     {
         value = std::clamp(value, 0.0f, 1.0f);
         return minVal * powf(maxVal / minVal, value);
+    }
+
+    int GetSizeDivisor(const ResonatorParams &params)
+    {
+        return std::clamp(params.size, 1, 8);
+    }
+
+    int GetTapCount(const ResonatorParams &params)
+    {
+        return std::clamp(params.taps, 1, 5);
+    }
+
+    float ReadPrimeSpacedTaps(const DelayBuffer<kMaxDelaySamples> &delay, float baseDelay, int tapCount)
+    {
+        constexpr float tapRatios[] = {1.0f, 0.733f, 0.569f, 0.421f, 0.317f};
+        constexpr float tapGains[] = {1.0f, 0.82f, 0.68f, 0.56f, 0.46f};
+
+        const int count = std::clamp(tapCount, 1, static_cast<int>(sizeof(tapRatios) / sizeof(tapRatios[0])));
+        float sum = 0.0f;
+        float gainSum = 0.0f;
+        for (int tap = 0; tap < count; ++tap)
+        {
+            const float gain = tapGains[tap];
+            sum += delay.ReadAt(baseDelay * tapRatios[tap]) * gain;
+            gainSum += gain;
+        }
+
+        return gainSum > 0.0f ? sum / gainSum : 0.0f;
     }
 } // namespace
 
@@ -96,6 +126,8 @@ MenuItem wiringItems[] = {
 MenuItem resonatorItems[] = {
     {"Ratio", MenuItemType::Ratio, &resonatorParams.ratio, nullptr, 0.25f, 4.0f, 0.05f},
     {"Mix", MenuItemType::Percent, &resonatorParams.mix, nullptr, 0.0f, 1.0f, 0.02f},
+    {"Size", MenuItemType::Int, nullptr, &resonatorParams.size, 1.0f, 8.0f, 1.0f},
+    {"Taps", MenuItemType::Int, nullptr, &resonatorParams.taps, 1.0f, 5.0f, 1.0f},
 };
 
 MenuItem distortionItems[] = {
@@ -203,11 +235,12 @@ void UpdateControls()
         }
     }
 
+    const float clockDivisor = static_cast<float>(GetSizeDivisor(resonatorParams));
     feedFilters.SetParams(filterParams.level,
                           filterParams.freqRatio,
                           filterParams.q,
-                          currentFreq,
-                          currentFreq2);
+                          currentFreq / clockDivisor,
+                          currentFreq2 / clockDivisor);
 }
 
 void HandleCalibrationSave()
@@ -260,8 +293,9 @@ void AudioCallback(AudioHandle::InputBuffer in,
                    AudioHandle::OutputBuffer out,
                    size_t size)
 {
-    const float delaySamples1 = sampleRate / std::max(currentFreq, 1.0f);
-    const float delaySamples2 = sampleRate / std::max(currentFreq2, 1.0f);
+    const float clockDivisor = static_cast<float>(GetSizeDivisor(resonatorParams));
+    const float delaySamples1 = (sampleRate * clockDivisor) / std::max(currentFreq, 1.0f);
+    const float delaySamples2 = (sampleRate * clockDivisor) / std::max(currentFreq2, 1.0f);
 
     delays.SetDelayTimes(delaySamples1, delaySamples2);
 
@@ -274,6 +308,7 @@ void AudioCallback(AudioHandle::InputBuffer in,
     const float feedXY = wiringParams.feedXY;
     const float feedYX = wiringParams.feedYX;
     const int folds = distortionParams.folds;
+    const int tapCount = GetTapCount(resonatorParams);
 
     float inPeakX = 0.0f;
     float inPeakY = 0.0f;
@@ -299,6 +334,8 @@ void AudioCallback(AudioHandle::InputBuffer in,
 
         const float resX = delays.Read1();
         const float resY = delays.Read2();
+        const float tapOutX = ReadPrimeSpacedTaps(delays.d1, delaySamples1, tapCount);
+        const float tapOutY = ReadPrimeSpacedTaps(delays.d2, delaySamples2, tapCount);
 
         const float filteredX = feedFilters.ProcessX(resX);
         const float filteredY = feedFilters.ProcessY(resY);
@@ -329,8 +366,8 @@ void AudioCallback(AudioHandle::InputBuffer in,
         delays.Write1(SoftClipSample(makeupX));
         delays.Write2(SoftClipSample(makeupY));
 
-        out[0][i] = dryMix * inX + resMix * resX;
-        out[1][i] = dryMix * inY + resMix * resY;
+        out[0][i] = dryMix * inX + resMix * tapOutX;
+        out[1][i] = dryMix * inY + resMix * tapOutY;
     }
 
     if (!calibMode)

@@ -28,13 +28,19 @@ public:
         delay_ = std::clamp(delay, 1.0f, static_cast<float>(max_size - 2));
     }
 
-    float Read() const
+    float ReadAt(float delay) const
     {
-        const int32_t delay_integral = static_cast<int32_t>(delay_);
-        const float delay_fractional = delay_ - static_cast<float>(delay_integral);
+        const float clamped = std::clamp(delay, 1.0f, static_cast<float>(max_size - 2));
+        const int32_t delay_integral = static_cast<int32_t>(clamped);
+        const float delay_fractional = clamped - static_cast<float>(delay_integral);
         const float a = line_[(write_ptr_ + delay_integral) % max_size];
         const float b = line_[(write_ptr_ + delay_integral + 1) % max_size];
         return a + (b - a) * delay_fractional;
+    }
+
+    float Read() const
+    {
+        return ReadAt(delay_);
     }
 
     void Write(float sample)
@@ -79,6 +85,8 @@ struct DelayLinePair
 
     float Read1() const { return d1.Read(); }
     float Read2() const { return d2.Read(); }
+    float ReadAt1(float delay) const { return d1.ReadAt(delay); }
+    float ReadAt2(float delay) const { return d2.ReadAt(delay); }
 
     void Write1(float v) { d1.Write(v); }
     void Write2(float v) { d2.Write(v); }

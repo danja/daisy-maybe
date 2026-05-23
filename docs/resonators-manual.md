@@ -4,12 +4,14 @@ Guide to the dual-resonator delay firmware for kxmx_bluemchen.
 
 ## Overview
 
-This firmware turns the module into a pair of tuned delay-line resonators with an input wavefolder/overdrive stage and filtered feed routing. Each channel takes its own audio input and output, with delay lengths set so the resonant pitch tracks 1V/oct via CV 1. The menu provides master mix and feed routing, distortion controls, and per-resonator ratio and damping.
+This firmware turns the module into a pair of tuned delay-line resonators with an input wavefolder/overdrive stage, filtered feed routing, clock-size scaling, and optional multi-tap output. Each channel takes its own audio input and output, with delay lengths set so the resonant pitch tracks 1V/oct via CV 1. The menu provides master mix and feed routing, distortion controls, resonator ratio, delay size, tap count, and filter shaping.
 
 ### Key Specifications
 
 - **Audio Rate**: 48 kHz
 - **Resonator Range**: ~10 Hz - 8 kHz (base), V/Oct tracking via CV1
+- **Delay Size**: 1x-8x effective clock divisor
+- **Output Taps**: 1-5 normalized prime-spaced taps per channel
 - **CV Inputs**: 2x 0-5V
 - **Audio Inputs**: 2x (one per resonator)
 - **Audio Outputs**: 2x (one per resonator)
@@ -28,7 +30,7 @@ This firmware turns the module into a pair of tuned delay-line resonators with a
 │                                 │
 │     ○ POT 1 (Pitch)             │
 │                                 │
-│     ○ POT 2 (Offset)            │
+│     ○ POT 2 (Fold)              │
 │                                 │
 │     ┌───┐  Encoder               │
 │     │ ⟲ │  (Menu)               │
@@ -47,7 +49,7 @@ This firmware turns the module into a pair of tuned delay-line resonators with a
 1. **Patch audio** to IN 1 and/or IN 2.
 2. **Turn Knob 1** to set the base resonant pitch.
 3. **Patch CV 1** for 1V/oct pitch control (5 octaves).
-4. **Turn Knob 2 / CV 2** to offset resonator 2 relative to resonator 1.
+4. **Turn Knob 2 / CV 2** to set wavefolder depth.
 5. **Rotate the encoder** to adjust the current menu item.
 6. **Short press the encoder** to cycle through menu pages.
 
@@ -73,15 +75,17 @@ The top line shows the current page title. When the title line is selected, rota
   - `X-Y`: Resonator X to Y feed via filter.
   - `Y-X`: Resonator Y to X feed via filter.
 - **Resonate**
-  - `RAT`: Resonator Y ratio vs X delay time (0.25–4.0).
-  - `MIX`: Resonator wet/dry mix at the output.
+  - `Ratio`: Resonator Y ratio vs X delay time (0.25-4.0).
+  - `Mix`: Resonator wet/dry mix at the output.
+  - `Size`: Effective delay clock divisor (1-8). Higher values lengthen the delay lines and lower the resonant pitch for a larger-body response.
+  - `Taps`: Number of output taps (1-5). Higher values add shorter prime-spaced taps for a reverb-like spread.
 - **Distort**
-  - `FOLD`: Fold mix (dry ↔ folded).
-  - `DRIV`: Overdrive mix (dry ↔ driven).
-  - `NFLD`: Number of wavefolds (1–5).
+  - `Fold`: Fold mix (dry ↔ folded).
+  - `Drive`: Overdrive mix (dry ↔ driven).
+  - `NFold`: Number of wavefolds (1-5).
 - **Filter**
-  - `MIX`: Filter mix (dry ↔ filtered) on the feed paths.
-  - `FREQ`: Filter cutoff ratio (0.25–2.0) relative to each resonator pitch.
+  - `Level`: Filter mix (dry ↔ filtered) on the feed paths.
+  - `Freq`: Filter cutoff ratio (0.25-2.0) relative to each resonator pitch.
   - `Q`: Filter resonance (0.5–2.0).
 
 ## Calibration Mode (CAL)
@@ -97,23 +101,31 @@ Settings are saved to flash automatically after about one second of inactivity.
 
 The feed paths are filtered and summed before the wavefolder/overdrive stage. This keeps the feedback tone consistent even when distortion is pushed.
 
-Tip: use higher `FXX` for strong single-resonator tones; add `FXY`/`FYX` for stereo interplay and coupled resonances.
+Tip: use higher `X-X` or `Y-Y` for strong single-resonator tones; add `X-Y`/`Y-X` for stereo interplay and coupled resonances.
 
 ## Filter
 
 The feed paths run through a 2-pole lowpass filter before the distortion stage.
 
-- Higher `FREQ` keeps the feedback bright; lower values darken the tone.
+- Higher `Freq` keeps the feedback bright; lower values darken the tone.
 - Higher `Q` emphasizes cutoff resonance; lower values are smoother.
-- `MIX` blends between dry feedback and filtered feedback.
+- `Level` blends between dry feedback and filtered feedback.
+
+## Size and Taps
+
+`Size` changes the effective resonator clock divisor. At `1`, the resonator tracks the normal pitch range. Higher values multiply the delay time, producing a larger, lower resonant body while keeping the rest of the pitch-control path intact.
+
+`Taps` changes only the audible resonator output. The internal feedback path still uses the main tuned tap, while the output blends up to five shorter taps spaced at prime-like ratios. Tap gains are normalized by their total gain so adding taps creates density and reverb-like diffusion without a large level jump.
 
 ## Mixes
 
-`FOLD` and `DRIV` set how much distortion is blended into the resonator input. `MIX` sets the resonator wet/dry output balance.
+`Fold` and `Drive` set how much distortion is blended into the resonator input. `Mix` sets the resonator wet/dry output balance.
 
 ## Tips
 
 - Patch noise or short percussive hits to excite the resonators.
-- Use `RAT` for musical intervals (0.5 = octave down, 2.0 = octave up).
-- Cross-feed (`FXY`/`FYX`) can create stereo “chorus” effects when lightly applied.
+- Use `Ratio` for musical intervals (0.5 = octave down, 2.0 = octave up).
+- Increase `Size` for gong-like or body-resonance sounds; reduce it back to `1` for tighter pitched tracking.
+- Increase `Taps` for a wider reverb-like tail without changing feedback stability.
+- Cross-feed (`X-Y`/`Y-X`) can create stereo “chorus” effects when lightly applied.
 - Use CAL before serious tracking work, especially if CV source is not perfectly scaled.

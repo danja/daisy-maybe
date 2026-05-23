@@ -19,6 +19,8 @@ was Res, DMX and DMY will be removed
 
 * Ratio (was RAT, ratio of delay lengths)
 * Mix (was RMIX, wet/dry of resonator output)
+* Size (delay clock divisor, 1-8)
+* Taps (normalized prime-spaced output taps, 1-5)
 
 ### Distort
 
