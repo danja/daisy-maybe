@@ -29,6 +29,17 @@ float SoftClip(float x)
     return x / (1.0f + absx);
 }
 
+float SoftLimit(float x)
+{
+    const float absx = std::fabs(x);
+    if (absx <= 0.95f)
+    {
+        return x;
+    }
+    const float sign = x < 0.0f ? -1.0f : 1.0f;
+    return sign * (0.95f + 0.05f * std::tanh((absx - 0.95f) * 20.0f));
+}
+
 float MapExpo(float value, float minVal, float maxVal)
 {
     value = Clamp01(value);
@@ -1180,8 +1191,9 @@ public:
         delayL_.Write(SoftClip(inL + crossL * fb));
         delayR_.Write(SoftClip(inR + crossR * fb));
 
-        outL = crossL;
-        outR = crossR;
+        constexpr float kOutputMakeup = 2.8f;
+        outL = SoftLimit(crossL * kOutputMakeup);
+        outR = SoftLimit(crossR * kOutputMakeup);
     }
 
 private:
@@ -1304,7 +1316,7 @@ public:
                 activeTaps++;
             }
 
-            const float tapNorm = (activeTaps > 0) ? (1.0f / static_cast<float>(activeTaps)) : 0.0f;
+            const float tapNorm = (activeTaps > 0) ? (1.0f / std::sqrt(static_cast<float>(activeTaps))) : 0.0f;
             sumL *= tapNorm;
             sumR *= tapNorm;
 
@@ -1314,9 +1326,9 @@ public:
             Write(bufferL_, writeL_, writeL);
             Write(bufferR_, writeR_, writeR);
 
-            const float outGain = 1.5f;
-            lastOutL_ = std::clamp(sumL * outGain, -1.0f, 1.0f);
-            lastOutR_ = std::clamp(sumR * outGain, -1.0f, 1.0f);
+            const float outGain = 0.85f;
+            lastOutL_ = SoftLimit(sumL * outGain);
+            lastOutR_ = SoftLimit(sumR * outGain);
         }
 
         outL = lastOutL_;
@@ -1522,7 +1534,7 @@ private:
                 const float decor = -v * stereoPolarity;
                 v = Lerp(v, decor, diffusion * 0.35f);
             }
-            coeffs[i] = SoftClip(v);
+            coeffs[i] = std::clamp(v, -1.5f, 1.5f);
             fb[i] = coeffs[i] * kLeak;
         }
 
@@ -1530,7 +1542,7 @@ private:
 
         for (int i = 0; i < kBlock; ++i)
         {
-            out[i] = std::clamp(coeffs[i] * 0.85f, -1.0f, 1.0f);
+            out[i] = SoftLimit(coeffs[i] * 0.95f);
         }
     }
 
@@ -1778,7 +1790,7 @@ private:
         for (int i = 0; i < kBlock; ++i)
         {
             smooth[i] += (coeffs[i] - smooth[i]) * alpha;
-            coeffs[i] = SoftClip(smooth[i]);
+            coeffs[i] = std::clamp(smooth[i], -1.5f, 1.5f);
         }
 
         InverseHaar(coeffs, tmp);
@@ -1786,7 +1798,7 @@ private:
         for (int i = 0; i < kBlock; ++i)
         {
             const float dryKeep = 0.20f * (1.0f - scramble);
-            out[i] = std::clamp(coeffs[i] * 1.16f + in[i] * dryKeep, -1.0f, 1.0f);
+            out[i] = SoftLimit(coeffs[i] * 0.98f + in[i] * dryKeep);
         }
     }
 
@@ -1982,8 +1994,8 @@ private:
         const float makeup = 1.35f + 0.45f * (1.0f - Clamp01(rt.c2));
         for (int i = 0; i < kBlock; ++i)
         {
-            outL[i] = std::clamp(SoftClip(coeffL[i] * makeup), -1.0f, 1.0f);
-            outR[i] = std::clamp(SoftClip(coeffR[i] * makeup), -1.0f, 1.0f);
+            outL[i] = SoftLimit(coeffL[i] * makeup);
+            outR[i] = SoftLimit(coeffR[i] * makeup);
         }
     }
 
@@ -2098,8 +2110,8 @@ public:
         const float coreL = dryMidL + lowOutL + highOutL;
         const float coreR = dryMidR + lowOutR + highOutR;
 
-        outL = std::clamp(SoftClip(coreL + 1.15f * midDistL), -1.0f, 1.0f);
-        outR = std::clamp(SoftClip(coreR + 1.15f * midDistR), -1.0f, 1.0f);
+        outL = SoftClip((coreL + 1.15f * midDistL) * 0.08f);
+        outR = SoftClip((coreR + 1.15f * midDistR) * 0.08f);
     }
 
 private:
