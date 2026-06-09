@@ -10,20 +10,18 @@ class AlgoNth;
 class AlgoBgm;
 class AlgoNff;
 class AlgoNdm;
-class AlgoNes;
 class AlgoNhc;
 class AlgoNpl;
-class AlgoNmg;
 class AlgoNsm;
-class AlgoNce;
 class AlgoNps;
 class AlgoNrv;
 #if NEUROTIC_ENABLE_EUDELAY
 class AlgoNed;
 #endif
-class AlgoNwl;
 class AlgoNws;
-class AlgoNwg;
+class AlgoNmb;
+class AlgoNss;
+class AlgoNfm;
 class AlgoNbz;
 
 class NeuroticAlgoBank
@@ -42,19 +40,17 @@ private:
     AlgoBgm *bgm_ = nullptr;
     AlgoNff *nff_ = nullptr;
     AlgoNdm *ndm_ = nullptr;
-    AlgoNes *nes_ = nullptr;
     AlgoNhc *nhc_ = nullptr;
     AlgoNpl *npl_ = nullptr;
-    AlgoNmg *nmg_ = nullptr;
     AlgoNsm *nsm_ = nullptr;
-    AlgoNce *nce_ = nullptr;
     AlgoNps *nps_ = nullptr;
     AlgoNrv *nrv_ = nullptr;
 #if NEUROTIC_ENABLE_EUDELAY
     AlgoNed *ned_ = nullptr;
 #endif
-    AlgoNwl *nwl_ = nullptr;
     AlgoNws *nws_ = nullptr;
-    AlgoNwg *nwg_ = nullptr;
+    AlgoNmb *nmb_ = nullptr;
+    AlgoNss *nss_ = nullptr;
+    AlgoNfm *nfm_ = nullptr;
     AlgoNbz *nbz_ = nullptr;
 };

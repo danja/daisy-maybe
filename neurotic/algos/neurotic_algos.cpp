@@ -52,6 +52,12 @@ float MapPitch(float value, float minMidi, float maxMidi)
     return 440.0f * std::pow(2.0f, (note - 69.0f) / 12.0f);
 }
 
+float HotEnd(float value)
+{
+    value = Clamp01(value);
+    return value * value * (3.0f - 2.0f * value);
+}
+
 float OnePoleProcess(float x, float cutoffHz, float sampleRate, float &state)
 {
     const float alpha = std::clamp(cutoffHz / (cutoffHz + sampleRate), 0.0f, 1.0f);
@@ -75,6 +81,57 @@ float ShortestPhaseDelta(float from, float to)
     while (delta < -kPi)
         delta += kTwoPi;
     return delta;
+}
+
+struct VowelAnchor
+{
+    float x;
+    float y;
+    float f1;
+    float f2;
+    float f3;
+    float g1;
+    float g2;
+    float g3;
+};
+
+constexpr VowelAnchor kVowels[] = {
+    {0.12f, 0.18f, 800.0f, 1150.0f, 2900.0f, 1.00f, 0.86f, 0.50f}, // A
+    {0.76f, 0.34f, 500.0f, 1900.0f, 2550.0f, 0.85f, 1.00f, 0.48f}, // E
+    {0.92f, 0.88f, 280.0f, 2250.0f, 3000.0f, 0.70f, 1.00f, 0.60f}, // I
+    {0.24f, 0.72f, 560.0f, 880.0f, 2400.0f, 1.00f, 0.78f, 0.46f},  // O
+    {0.48f, 0.94f, 320.0f, 820.0f, 2200.0f, 0.78f, 0.82f, 0.56f},  // U
+};
+
+void BlendVowel(float x, float y, float *freqs, float *gains)
+{
+    x = Clamp01(x);
+    y = Clamp01(y);
+
+    float sum = 0.0f;
+    freqs[0] = freqs[1] = freqs[2] = 0.0f;
+    gains[0] = gains[1] = gains[2] = 0.0f;
+    for (const VowelAnchor &v : kVowels)
+    {
+        const float dx = x - v.x;
+        const float dy = y - v.y;
+        const float dist2 = dx * dx + dy * dy;
+        const float w = 1.0f / ((dist2 + 0.018f) * (dist2 + 0.018f));
+        sum += w;
+        freqs[0] += v.f1 * w;
+        freqs[1] += v.f2 * w;
+        freqs[2] += v.f3 * w;
+        gains[0] += v.g1 * w;
+        gains[1] += v.g2 * w;
+        gains[2] += v.g3 * w;
+    }
+
+    const float inv = (sum > 0.0f) ? (1.0f / sum) : 1.0f;
+    for (int i = 0; i < 3; ++i)
+    {
+        freqs[i] *= inv;
+        gains[i] *= inv;
+    }
 }
 
 struct SimpleDelay
@@ -372,18 +429,20 @@ public:
         const float resonance = rt.c5;
 
         const float base = MapPitch(tension, 36.0f, 95.0f);
-        const float spread = 1.0f + mass * 2.5f;
-        const float q = 0.6f + resonance * 10.0f;
+        const float massHot = HotEnd(mass);
+        const float resHot = HotEnd(resonance);
+        const float spread = 0.75f + mass * 2.6f + massHot * 2.2f;
+        const float q = 0.7f + resHot * 16.0f;
 
         float sumL = 0.0f;
         float sumR = 0.0f;
         for (int i = 0; i < 2; ++i)
         {
-            const float ratio = 0.8f + static_cast<float>(i) * 0.9f;
+            const float ratio = (i == 0) ? (0.62f + massHot * 0.18f) : (1.45f + massHot * 0.95f);
             const float freqL = base * ratio;
-            const float freqR = base * ratio * (1.0f + asym * 0.2f);
-            svfL_[i].SetFreq(freqL * spread);
-            svfR_[i].SetFreq(freqR * spread);
+            const float freqR = base * ratio * (1.0f + asym * (0.18f + massHot * 0.28f));
+            svfL_[i].SetFreq(std::clamp(freqL * spread, 20.0f, sampleRate_ * 0.42f));
+            svfR_[i].SetFreq(std::clamp(freqR * spread, 20.0f, sampleRate_ * 0.42f));
             svfL_[i].SetRes(q);
             svfR_[i].SetRes(q);
             svfL_[i].Process(inL);
@@ -396,8 +455,8 @@ public:
         sumL = OnePoleProcess(sumL, dampCut, sampleRate_, lpStateL_);
         sumR = OnePoleProcess(sumR, dampCut, sampleRate_, lpStateR_);
 
-        outL = sumL;
-        outR = sumR;
+        outL = SoftLimit(sumL * (2.35f + resHot * 0.90f));
+        outR = SoftLimit(sumR * (2.35f + resHot * 0.90f));
     }
 
 private:
@@ -426,12 +485,12 @@ public:
 
         s_spectral.BuildSpectrum();
 
-        const float depth = Clamp01(rt.c1);
+        const float depth = std::clamp(rt.c1 * (1.0f + HotEnd(rt.c1) * 0.75f), 0.0f, 1.0f);
         const float formant = Clamp01(rt.c2);
         const float transient = Clamp01(rt.c3);
-        const float weave = Clamp01(rt.c4);
+        const float weave = std::clamp(rt.c4 * (1.0f + HotEnd(rt.c4) * 0.65f), 0.0f, 1.0f);
 
-        const float protect = Lerp(0.1f, 1.0f, transient);
+        const float protect = Lerp(0.04f, 1.0f, transient);
         const size_t formantBin = static_cast<size_t>(formant * formant * (kBins - 1));
 
         for (size_t k = 0; k < kBins; ++k)
@@ -446,12 +505,13 @@ public:
             const float phaseL = std::atan2(imL, reL);
             const float phaseR = std::atan2(imR, reR);
 
-            const float mixBase = (k < formantBin) ? weave : depth;
+            const float mixBase = (k < formantBin) ? std::max(weave, depth * 0.55f) : depth;
             const float hi = static_cast<float>(k) / static_cast<float>(kBins - 1);
-            const float mix = mixBase * (1.0f - 0.4f * hi);
-            const float magLNew = Lerp(magL, magR, mix);
-            const float magRNew = Lerp(magR, magL, mix);
-            const float phaseShift = mix * protect * 4.0f;
+            const float mix = std::clamp(mixBase * (1.10f + 0.35f * hi), 0.0f, 1.0f);
+            const float spectralBite = 1.0f + mix * (0.18f + 0.42f * std::sin(static_cast<float>(k) * 0.071f));
+            const float magLNew = Lerp(magL, magR, mix) * spectralBite;
+            const float magRNew = Lerp(magR, magL, mix) * spectralBite;
+            const float phaseShift = mix * protect * 7.5f;
             const float phaseLNew = phaseL + ShortestPhaseDelta(phaseL, phaseR) * phaseShift;
             const float phaseRNew = phaseR + ShortestPhaseDelta(phaseR, phaseL) * phaseShift;
 
@@ -491,31 +551,33 @@ public:
     void Process(float inL, float inR, const NeuroticRuntime &rt, float &outL, float &outR)
     {
         const float drive = rt.c1;
-        const float flow = rt.c2 + rt.lfoValue * rt.lfoDepth * 0.4f;
+        const float flow = rt.c2 + rt.lfoValue * rt.lfoDepth * 0.55f;
         const float headGap = rt.c3;
-        const float fb = std::clamp(rt.c4 * 1.2f, 0.0f, 0.98f);
+        const float fb = std::clamp(rt.c4 * 1.35f, 0.0f, 0.985f);
 
-        const float baseDelay = MapExpo(0.1f + std::clamp(flow, 0.0f, 1.0f) * 0.9f, 120.0f, 2000.0f);
-        phase_ += (0.1f + flow * 2.0f) / sampleRate_;
+        const float flowClamped = std::clamp(flow, 0.0f, 1.0f);
+        const float flowHot = HotEnd(flowClamped);
+        const float baseDelay = MapExpo(0.04f + flowClamped * 0.96f, 55.0f, 3100.0f);
+        phase_ += (0.07f + flowClamped * 1.6f + flowHot * 3.2f) / sampleRate_;
         if (phase_ > 1.0f)
             phase_ -= 1.0f;
-        const float mod = std::sin(phase_ * kTwoPi) * (20.0f + flow * 140.0f);
+        const float mod = std::sin(phase_ * kTwoPi) * (25.0f + flowClamped * 170.0f + flowHot * 260.0f);
         const float delaySamp = baseDelay + mod;
 
-        const float satL = SoftClip(inL * (1.0f + drive * 4.0f));
-        const float satR = SoftClip(inR * (1.0f + drive * 4.0f));
+        const float satL = SoftClip(inL * (1.0f + drive * 4.0f + HotEnd(drive) * 5.0f));
+        const float satR = SoftClip(inR * (1.0f + drive * 4.0f + HotEnd(drive) * 5.0f));
 
         const float dl = s_delayA.Read(delaySamp);
         const float dr = s_delayB.Read(delaySamp * 0.97f);
-        const float gapCut = MapExpo(1.0f - headGap, 80.0f, 12000.0f);
+        const float gapCut = MapExpo(1.0f - HotEnd(headGap), 55.0f, 14000.0f);
         const float fbL = OnePoleProcess(dl, gapCut, sampleRate_, lpStateL_);
         const float fbR = OnePoleProcess(dr, gapCut, sampleRate_, lpStateR_);
 
         s_delayA.Write(satL + fbL * fb);
         s_delayB.Write(satR + fbR * fb);
 
-        outL = dl;
-        outR = dr;
+        outL = SoftLimit(dl * (0.65f + drive * 0.25f));
+        outR = SoftLimit(dr * (0.65f + drive * 0.25f));
     }
 
 private:
@@ -545,15 +607,15 @@ public:
         const float elev = rt.c2;
         const float dist = rt.c3;
         const float spinAmount = rt.c4;
-        const float spin = rt.lfoValue * rt.lfoDepth * (0.3f + spinAmount * 1.4f);
+        const float spin = rt.lfoValue * rt.lfoDepth * (0.4f + spinAmount * 2.4f);
 
         phase_ += (0.05f + rt.lfoRate * 2.2f) / sampleRate_;
         if (phase_ > 1.0f)
             phase_ -= 1.0f;
-        const float spinPan = std::sin(phase_ * kTwoPi) * spin * 1.6f;
+        const float spinPan = std::sin(phase_ * kTwoPi) * spin * 2.2f;
 
         const float pan = std::clamp(az + spinPan, -1.0f, 1.0f);
-        const float itd = std::fabs(pan) * (20.0f + dist * 100.0f);
+        const float itd = std::fabs(pan) * (18.0f + dist * 120.0f + HotEnd(dist) * 150.0f);
         const float leftGain = std::sqrt(0.5f * (1.0f - pan));
         const float rightGain = std::sqrt(0.5f * (1.0f + pan));
 
@@ -571,12 +633,12 @@ public:
             r = s_delayB.Read(1.0f + itd);
         }
 
-        const float cutoff = MapExpo(1.0f - dist, 200.0f, 14000.0f);
+        const float cutoff = MapExpo(1.0f - HotEnd(dist), 80.0f, 16000.0f);
         const float mono = 0.5f * (l + r);
         const float distant = OnePoleProcess(mono, cutoff, sampleRate_, lpState_);
 
-        outL = (distant + (l - distant) * elev) * leftGain * 2.2f;
-        outR = (distant + (r - distant) * elev) * rightGain * 2.2f;
+        outL = SoftLimit((distant + (l - distant) * elev) * leftGain * 2.6f);
+        outR = SoftLimit((distant + (r - distant) * elev) * rightGain * 2.6f);
     }
 
 private:
@@ -600,6 +662,7 @@ public:
         }
         airStateL_ = 0.0f;
         airStateR_ = 0.0f;
+        controlCounter_ = 0;
     }
 
     void Reset()
@@ -611,40 +674,22 @@ public:
         }
         airStateL_ = 0.0f;
         airStateR_ = 0.0f;
+        controlCounter_ = 0;
+        noiseState_ = 0xA5366B4Du;
     }
 
     void Process(float inL, float inR, const NeuroticRuntime &rt, float &outL, float &outR)
     {
-        const float vowel = rt.c1;
-        const float art = rt.c2;
-        const float artic = rt.c3;
-        const float breath = rt.c4;
-
-        const float base = MapPitch(vowel, 43.0f, 83.0f);
-        const float spread = 1.4f + art * 1.5f;
-        const float f1 = base;
-        const float f2 = base * spread;
-        const float f3 = base * (spread + 0.8f);
-
-        const float res = 0.8f + rt.c5 * 6.0f;
-        for (int i = 0; i < 3; ++i)
+        if (controlCounter_ <= 0)
         {
-            formL_[i].SetRes(res);
-            formR_[i].SetRes(res);
+            UpdateControls(rt);
+            controlCounter_ = kControlInterval;
         }
+        controlCounter_--;
 
-        formL_[0].SetFreq(f1);
-        formL_[1].SetFreq(f2);
-        formL_[2].SetFreq(f3);
-
-        const float splitMul = 1.0f + breath * 0.9f;
-        formR_[0].SetFreq(f1 * splitMul);
-        formR_[1].SetFreq(f2 * splitMul);
-        formR_[2].SetFreq(f3 * splitMul);
-
-        const float noise = (static_cast<float>(rand()) / RAND_MAX - 0.5f) * artic * 0.12f;
-        const float nL = inL + noise;
-        const float nR = inR + noise;
+        const float noise = NextNoise() * noiseScale_;
+        const float nL = SoftClip((inL + noise) * exciteGain_);
+        const float nR = SoftClip((inR + noise) * exciteGain_);
 
         float sumL = 0.0f;
         float sumR = 0.0f;
@@ -652,26 +697,68 @@ public:
         {
             formL_[i].Process(nL);
             formR_[i].Process(nR);
-            sumL += formL_[i].Band();
-            sumR += formR_[i].Band();
+            sumL += formL_[i].Band() * gains_[i];
+            sumR += formR_[i].Band() * gains_[i];
         }
 
-        const float airCut = MapExpo(std::clamp(breath, 0.0f, 1.0f), 500.0f, 12000.0f);
-        const float lpL = OnePoleProcess(inL, airCut, sampleRate_, airStateL_);
-        const float lpR = OnePoleProcess(inR, airCut, sampleRate_, airStateR_);
+        const float lpL = OnePoleProcess(inL, airCut_, sampleRate_, airStateL_);
+        const float lpR = OnePoleProcess(inR, airCut_, sampleRate_, airStateR_);
         const float airL = inL - lpL;
         const float airR = inR - lpR;
 
-        outL = sumL * 0.6f + airL * (breath * 0.8f);
-        outR = sumR * 0.6f + airR * (breath * 0.8f);
+        outL = SoftLimit(sumL * 0.95f + airL * breathAirGain_);
+        outR = SoftLimit(sumR * 0.95f + airR * breathAirGain_);
     }
 
 private:
+    static constexpr int kControlInterval = 16;
+
+    float NextNoise()
+    {
+        uint32_t x = noiseState_;
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        noiseState_ = x;
+        const float unit = static_cast<float>((x >> 8) & 0x00FFFFFFu) / 16777215.0f;
+        return unit - 0.5f;
+    }
+
+    void UpdateControls(const NeuroticRuntime &rt)
+    {
+        float freqs[3];
+        BlendVowel(rt.c1, rt.c2, freqs, gains_);
+
+        const float res = 1.0f + HotEnd(rt.c5) * 10.0f;
+        const float breath = Clamp01(rt.c4);
+        const float split = (breath - 0.5f) * 0.10f;
+        for (int i = 0; i < 3; ++i)
+        {
+            formL_[i].SetRes(res);
+            formR_[i].SetRes(res);
+            formL_[i].SetFreq(std::clamp(freqs[i] * (1.0f - split), 40.0f, sampleRate_ * 0.42f));
+            formR_[i].SetFreq(std::clamp(freqs[i] * (1.0f + split), 40.0f, sampleRate_ * 0.42f));
+        }
+
+        const float artic = Clamp01(rt.c3);
+        noiseScale_ = artic * 0.20f;
+        exciteGain_ = 1.0f + artic * 1.4f;
+        airCut_ = MapExpo(breath, 500.0f, 12000.0f);
+        breathAirGain_ = breath * 0.9f;
+    }
+
     float sampleRate_ = 48000.0f;
     daisysp::Svf formL_[3];
     daisysp::Svf formR_[3];
     float airStateL_ = 0.0f;
     float airStateR_ = 0.0f;
+    float gains_[3] = {1.0f, 0.8f, 0.5f};
+    float airCut_ = 500.0f;
+    float breathAirGain_ = 0.0f;
+    float noiseScale_ = 0.0f;
+    float exciteGain_ = 1.0f;
+    int controlCounter_ = 0;
+    uint32_t noiseState_ = 0xA5366B4Du;
 };
 
 class AlgoNdm
@@ -692,71 +779,32 @@ public:
         const float spread = rt.c1;
         const float color = rt.c2;
         const float gran = rt.c3;
-        const float drift = rt.c4 + rt.lfoValue * rt.lfoDepth * 0.4f;
+        const float drift = rt.c4 + rt.lfoValue * rt.lfoDepth * 0.65f;
 
-        phase_ += (0.1f + drift * 1.5f) / sampleRate_;
+        const float spreadHot = HotEnd(spread);
+        const float driftClamped = std::clamp(drift, 0.0f, 1.0f);
+        phase_ += (0.06f + driftClamped * 1.4f + HotEnd(driftClamped) * 2.4f) / sampleRate_;
         if (phase_ > 1.0f)
             phase_ -= 1.0f;
-        const float mod = std::sin(phase_ * kTwoPi) * (8.0f + spread * 40.0f);
+        const float mod = std::sin(phase_ * kTwoPi) * (10.0f + spread * 60.0f + spreadHot * 180.0f);
 
-        const float delayA = 40.0f + spread * 220.0f + mod;
-        const float delayB = 70.0f + spread * 300.0f - mod;
+        const float delayA = 24.0f + spread * 260.0f + spreadHot * 520.0f + mod;
+        const float delayB = 54.0f + spread * 330.0f + spreadHot * 680.0f - mod;
 
         const float dl = s_delayA.Read(delayA);
         const float dr = s_delayB.Read(delayB);
-        s_delayA.Write(inL + dl * (0.25f + gran * 0.6f));
-        s_delayB.Write(inR + dr * (0.25f + gran * 0.6f));
+        const float fb = std::clamp(0.22f + gran * 0.55f + HotEnd(gran) * 0.22f, 0.0f, 0.94f);
+        s_delayA.Write(SoftClip(inL + dl * fb));
+        s_delayB.Write(SoftClip(inR + dr * fb));
 
-        const float tilt = (color - 0.5f) * 0.8f;
-        outL = dl + inL * tilt;
-        outR = dr - inR * tilt;
+        const float tilt = (color - 0.5f) * (0.9f + HotEnd(std::fabs(color - 0.5f) * 2.0f) * 0.8f);
+        outL = SoftLimit((dl + inL * tilt) * (1.05f + spreadHot * 0.35f));
+        outR = SoftLimit((dr - inR * tilt) * (1.05f + spreadHot * 0.35f));
     }
 
 private:
     float sampleRate_ = 48000.0f;
     float phase_ = 0.0f;
-};
-
-class AlgoNes
-{
-public:
-    void Init(float sampleRate)
-    {
-        sampleRate_ = sampleRate;
-        Reset();
-    }
-    void Reset() { envL_ = 0.0f; envR_ = 0.0f; }
-
-    void Process(float inL, float inR, const NeuroticRuntime &rt, float &outL, float &outR)
-    {
-        const float punch = std::clamp(rt.c1 * 2.0f, 0.0f, 1.0f);
-        const float glue = std::clamp(rt.c2 * 1.6f, 0.0f, 1.0f);
-        const float lift = std::clamp(rt.c3 * 2.0f, 0.0f, 1.0f);
-        const float bias = rt.c4;
-
-        const float attack = 0.002f + (1.0f - punch) * 0.02f;
-        const float release = 0.01f + (1.0f - punch) * 0.12f;
-
-        envL_ += (std::fabs(inL) - envL_) * attack;
-        envR_ += (std::fabs(inR) - envR_) * attack;
-        envL_ += (std::fabs(inL) - envL_) * release;
-        envR_ += (std::fabs(inR) - envR_) * release;
-
-        const float env = Lerp(envL_, envR_, glue);
-        const float comp = 1.0f / (1.0f + env * (1.0f + punch * 18.0f));
-        const float liftGain = 1.0f + lift * 1.6f;
-
-        const float mixL = Lerp(inL, inR, bias);
-        const float mixR = Lerp(inR, inL, bias);
-        const float expand = 1.0f + lift * 0.6f;
-        outL = SoftClip(mixL * comp * liftGain * expand);
-        outR = SoftClip(mixR * comp * liftGain * expand);
-    }
-
-private:
-    float sampleRate_ = 48000.0f;
-    float envL_ = 0.0f;
-    float envR_ = 0.0f;
 };
 
 class AlgoNhc
@@ -782,8 +830,9 @@ public:
         const float sparsity = rt.c3;
         const float mirror = rt.c4;
 
-        const float scale = 0.6f + stretch * 1.8f;
-        const float inharm = inh * 0.18f;
+        const float stretchHot = HotEnd(stretch);
+        const float scale = 0.42f + stretch * 1.75f + stretchHot * 1.25f;
+        const float inharm = inh * 0.22f + HotEnd(inh) * 0.48f;
 
         for (size_t k = 0; k < kBins; ++k)
         {
@@ -805,10 +854,10 @@ public:
             const float reR = s_spectral.re[1][i0] + (s_spectral.re[1][i1] - s_spectral.re[1][i0]) * frac;
             const float imR = s_spectral.im[1][i0] + (s_spectral.im[1][i1] - s_spectral.im[1][i0]) * frac;
 
-            const int period = 2 + static_cast<int>(sparsity * 24.0f);
-            const int width = std::max(1, period / 5);
+            const int period = 2 + static_cast<int>(sparsity * 30.0f);
+            const int width = std::max(1, period / (5 + static_cast<int>(HotEnd(sparsity) * 7.0f)));
             const int slot = static_cast<int>(k) % period;
-            const float gate = (slot < width) ? 1.0f : 0.35f;
+            const float gate = (slot < width) ? 1.0f : Lerp(0.32f, 0.08f, HotEnd(sparsity));
             s_spectral.re[0][k] = reL * gate;
             s_spectral.im[0][k] = imL * gate;
             s_spectral.re[1][k] = reR * gate;
@@ -821,7 +870,7 @@ public:
             for (size_t k = mid; k < kBins; ++k)
             {
                 const size_t mirrorBin = kBins - 1 - k;
-                const float fold = mirror * 0.6f;
+                const float fold = mirror * 0.75f + HotEnd(mirror) * 0.65f;
                 s_spectral.re[0][mirrorBin] += s_spectral.re[0][k] * fold;
                 s_spectral.im[0][mirrorBin] -= s_spectral.im[0][k] * fold;
                 s_spectral.re[1][mirrorBin] += s_spectral.re[1][k] * fold;
@@ -829,7 +878,7 @@ public:
             }
         }
 
-        const float gain = 1.6f + stretch * 1.0f;
+        const float gain = 4.6f + stretch * 2.4f + stretchHot * 2.4f;
         for (size_t k = 0; k < kBins; ++k)
         {
             s_spectral.re[0][k] *= gain;
@@ -863,9 +912,9 @@ public:
 
         s_spectral.BuildSpectrum();
 
-        const float bind = std::clamp(rt.c1 * 3.0f, 0.0f, 1.0f);
-        const float swirl = std::clamp(rt.c2 * 4.0f + rt.lfoValue * rt.lfoDepth * 1.6f, 0.0f, 1.0f);
-        const float tilt = std::clamp(rt.c3 * 4.0f, 0.0f, 1.0f);
+        const float bind = std::clamp(rt.c1 * 2.2f + HotEnd(rt.c1) * 1.4f, 0.0f, 1.0f);
+        const float swirl = std::clamp(rt.c2 * 2.6f + HotEnd(rt.c2) * 2.2f + rt.lfoValue * rt.lfoDepth * 2.4f, 0.0f, 1.0f);
+        const float tilt = std::clamp(rt.c3 * 2.5f + HotEnd(rt.c3) * 2.0f, 0.0f, 1.0f);
         const float stereo = rt.c4;
 
         for (size_t k = 1; k < kBins - 1; ++k)
@@ -880,8 +929,9 @@ public:
             const float phaseL = std::atan2(imL, reL);
             const float phaseR = std::atan2(imR, reR);
 
-            const float warp = (static_cast<float>(k) / static_cast<float>(kBins)) * tilt * 3.0f;
-            const float swirlPhase = std::sin(k * 0.02f) * swirl * 8.0f;
+            const float norm = static_cast<float>(k) / static_cast<float>(kBins);
+            const float warp = norm * norm * tilt * 7.0f;
+            const float swirlPhase = std::sin(static_cast<float>(k) * (0.016f + 0.024f * swirl)) * swirl * 13.0f;
 
             const float phaseLNew = phaseL + swirlPhase + warp;
             const float phaseRNew = phaseR - swirlPhase - warp;
@@ -895,70 +945,24 @@ public:
             s_spectral.im[1][k] = magR * std::sin(linkR);
         }
 
-        const float widen = 1.0f + stereo * 1.1f;
-        s_spectral.re[0][0] *= widen;
-        s_spectral.re[1][0] *= 1.0f - stereo * 0.6f;
+        const float widen = 0.35f + stereo * 2.45f;
+        for (size_t k = 1; k < kBins - 1; ++k)
+        {
+            const float midRe = 0.5f * (s_spectral.re[0][k] + s_spectral.re[1][k]);
+            const float sideRe = 0.5f * (s_spectral.re[0][k] - s_spectral.re[1][k]);
+            const float midIm = 0.5f * (s_spectral.im[0][k] + s_spectral.im[1][k]);
+            const float sideIm = 0.5f * (s_spectral.im[0][k] - s_spectral.im[1][k]);
+            s_spectral.re[0][k] = midRe + sideRe * widen;
+            s_spectral.re[1][k] = midRe - sideRe * widen;
+            s_spectral.im[0][k] = midIm + sideIm * widen;
+            s_spectral.im[1][k] = midIm - sideIm * widen;
+        }
 
         s_spectral.InverseToOutput();
     }
 
 private:
     int unused_ = 0;
-};
-
-class AlgoNmg
-{
-public:
-    void Init(float sampleRate)
-    {
-        sampleRate_ = sampleRate;
-    }
-
-    void Reset()
-    {
-        hold_ = 0;
-        holdSampleL_ = 0.0f;
-        holdSampleR_ = 0.0f;
-    }
-
-    void Process(float inL, float inR, const NeuroticRuntime &rt, float &outL, float &outR)
-    {
-        const float size = rt.c1;
-        const float drift = rt.c2 + rt.lfoValue * rt.lfoDepth * 0.4f;
-        const float blend = rt.c3;
-        const float scatter = rt.c4;
-
-        const int grainSize = 20 + static_cast<int>(size * 300.0f);
-        if (hold_ <= 0)
-        {
-            hold_ = grainSize;
-            const float driftAmt = std::clamp(drift, -1.0f, 1.0f);
-            const float jitter = (static_cast<float>(rand()) / RAND_MAX - 0.5f) * driftAmt * 40.0f;
-            holdSampleL_ = s_delayA.Read(10.0f + scatter * 80.0f + jitter);
-            holdSampleR_ = s_delayB.Read(10.0f + (1.0f - scatter) * 80.0f - jitter);
-            holdWindow_ = 0.0f;
-        }
-        hold_--;
-
-        s_delayA.Write(inL);
-        s_delayB.Write(inR);
-
-        holdWindow_ += 1.0f / std::max(1, grainSize);
-        const float win = 0.5f - 0.5f * std::cos(kTwoPi * std::clamp(holdWindow_, 0.0f, 1.0f));
-
-        const float grainL = holdSampleL_ * win;
-        const float grainR = holdSampleR_ * win;
-
-        outL = Lerp(inL, grainL, blend);
-        outR = Lerp(inR, grainR, blend);
-    }
-
-private:
-    float sampleRate_ = 48000.0f;
-    int hold_ = 0;
-    float holdSampleL_ = 0.0f;
-    float holdSampleR_ = 0.0f;
-    float holdWindow_ = 0.0f;
 };
 
 class AlgoNsm
@@ -1016,61 +1020,6 @@ private:
     float x1_[2][kMaxPoles];
     float y1_[2][kMaxPoles];
     float fbState_[2];
-};
-
-class AlgoNce
-{
-public:
-    void Init(float sampleRate)
-    {
-        sampleRate_ = sampleRate;
-        Reset();
-    }
-
-    void Reset()
-    {
-        envL_ = 0.0f;
-        envR_ = 0.0f;
-    }
-
-    void Process(float inL, float inR, const NeuroticRuntime &rt, float &outL, float &outR)
-    {
-        const float amount = std::clamp(rt.c1 * 2.0f - 1.0f, -1.0f, 1.0f);
-        const float timeScale = MapExpo(rt.c2, 0.05f, 2.0f);
-        const float attackSec = (0.001f + rt.c3 * 0.05f) * timeScale;
-        const float decaySec = (0.01f + rt.c4 * 0.3f) * timeScale;
-
-        const float atkCoef = std::exp(-1.0f / (attackSec * sampleRate_));
-        const float decCoef = std::exp(-1.0f / (decaySec * sampleRate_));
-
-        const float absL = std::fabs(inL);
-        const float absR = std::fabs(inR);
-        envL_ = (absL > envL_) ? (atkCoef * envL_ + (1.0f - atkCoef) * absL)
-                               : (decCoef * envL_ + (1.0f - decCoef) * absL);
-        envR_ = (absR > envR_) ? (atkCoef * envR_ + (1.0f - atkCoef) * absR)
-                               : (decCoef * envR_ + (1.0f - decCoef) * absR);
-
-        const float env = 0.5f * (envL_ + envR_);
-        float gain = 1.0f;
-        if (amount >= 0.0f)
-        {
-            gain = 1.0f / (1.0f + amount * env * 8.0f);
-        }
-        else
-        {
-            const float expand = -amount;
-            gain = 1.0f + expand * std::clamp(0.5f - env, 0.0f, 0.5f) * 4.0f;
-        }
-
-        gain = std::clamp(gain, 0.2f, 2.0f);
-        outL = SoftClip(inL * gain);
-        outR = SoftClip(inR * gain);
-    }
-
-private:
-    float sampleRate_ = 48000.0f;
-    float envL_ = 0.0f;
-    float envR_ = 0.0f;
 };
 
 class AlgoNps
@@ -1156,11 +1105,11 @@ public:
 
     void Process(float inL, float inR, const NeuroticRuntime &rt, float &outL, float &outR)
     {
-        const float timeScale = MapExpo(rt.c1, 0.125f, 4.0f);
+        const float timeScale = MapExpo(rt.c1, 0.10f, 6.0f);
         const float baseDelaySamples = std::clamp(sampleRate_ * 0.16f * timeScale, 1.0f, kMaxDelaySamples_);
-        const float cross = Clamp01(rt.c3);
+        const float cross = std::clamp(rt.c3 * (1.0f + HotEnd(rt.c3) * 0.35f), 0.0f, 1.0f);
         const float tilt = Clamp01(rt.c5);
-        const float fb = std::clamp(rt.c2, 0.0f, 0.98f);
+        const float fb = std::clamp(rt.c2 * (1.0f + HotEnd(rt.c2) * 0.18f), 0.0f, 0.988f);
         const int taps = std::clamp(1 + static_cast<int>(rt.c4 * 9.999f), 1, 10);
 
         static constexpr int kPrimeTaps[10] = {2, 3, 5, 7, 11, 13, 17, 19, 23, 29};
@@ -1176,7 +1125,7 @@ public:
             const float delayR = baseDelaySamples * ratio * 1.07f;
             const float tapL = delayL_.Read(delayL);
             const float tapR = delayR_.Read(delayR);
-            const float tiltWeight = std::clamp(1.0f + tiltBipolar * (ratio - 0.5f) * 1.6f, 0.25f, 1.75f);
+            const float tiltWeight = std::clamp(1.0f + tiltBipolar * (ratio - 0.5f) * 2.1f, 0.15f, 2.05f);
             sumL += tapL * tiltWeight;
             sumR += tapR * tiltWeight;
         }
@@ -1191,7 +1140,7 @@ public:
         delayL_.Write(SoftClip(inL + crossL * fb));
         delayR_.Write(SoftClip(inR + crossR * fb));
 
-        constexpr float kOutputMakeup = 2.8f;
+        constexpr float kOutputMakeup = 3.2f;
         outL = SoftLimit(crossL * kOutputMakeup);
         outR = SoftLimit(crossR * kOutputMakeup);
     }
@@ -1390,172 +1339,6 @@ private:
 };
 #endif
 
-class AlgoNwl
-{
-public:
-    void Init(float sampleRate)
-    {
-        sampleRate_ = sampleRate;
-        Reset();
-    }
-
-    void Reset()
-    {
-        std::fill(&inBlockL_[0], &inBlockL_[kBlock], 0.0f);
-        std::fill(&inBlockR_[0], &inBlockR_[kBlock], 0.0f);
-        std::fill(&outBlockL_[0], &outBlockL_[kBlock], 0.0f);
-        std::fill(&outBlockR_[0], &outBlockR_[kBlock], 0.0f);
-        std::fill(&fbCoeffsL_[0], &fbCoeffsL_[kBlock], 0.0f);
-        std::fill(&fbCoeffsR_[0], &fbCoeffsR_[kBlock], 0.0f);
-        blockIndex_ = 0;
-    }
-
-    void Process(float inL, float inR, const NeuroticRuntime &rt, float &outL, float &outR)
-    {
-        inBlockL_[blockIndex_] = inL;
-        inBlockR_[blockIndex_] = inR;
-        outL = outBlockL_[blockIndex_];
-        outR = outBlockR_[blockIndex_];
-
-        blockIndex_++;
-        if (blockIndex_ >= kBlock)
-        {
-            blockIndex_ = 0;
-            ProcessBlock(inBlockL_, outBlockL_, fbCoeffsL_, rt, 1.0f);
-            ProcessBlock(inBlockR_, outBlockR_, fbCoeffsR_, rt, -1.0f);
-        }
-    }
-
-private:
-    static constexpr int kBlock = 32;
-    static constexpr float kInvSqrt2 = 0.70710678118f;
-    static constexpr float kLeak = 0.95f;
-
-    void ForwardHaar(float *x, float *tmp) const
-    {
-        int len = kBlock;
-        for (int level = 0; level < 3; ++level)
-        {
-            const int half = len / 2;
-            for (int i = 0; i < half; ++i)
-            {
-                const float a = x[2 * i];
-                const float b = x[2 * i + 1];
-                tmp[i] = (a + b) * kInvSqrt2;
-                tmp[half + i] = (a - b) * kInvSqrt2;
-            }
-            for (int i = 0; i < len; ++i)
-            {
-                x[i] = tmp[i];
-            }
-            len = half;
-        }
-    }
-
-    void InverseHaar(float *x, float *tmp) const
-    {
-        for (int len = 8; len <= kBlock; len *= 2)
-        {
-            const int half = len / 2;
-            for (int i = 0; i < half; ++i)
-            {
-                const float a = x[i];
-                const float d = x[half + i];
-                tmp[2 * i] = (a + d) * kInvSqrt2;
-                tmp[2 * i + 1] = (a - d) * kInvSqrt2;
-            }
-            for (int i = 0; i < len; ++i)
-            {
-                x[i] = tmp[i];
-            }
-        }
-    }
-
-    void ProcessBlock(const float *in, float *out, float *fb, const NeuroticRuntime &rt, float stereoPolarity)
-    {
-        float coeffs[kBlock];
-        float tmp[kBlock];
-        for (int i = 0; i < kBlock; ++i)
-        {
-            coeffs[i] = in[i];
-        }
-
-        ForwardHaar(coeffs, tmp);
-
-        float *a3 = &coeffs[0];
-        float *d3 = &coeffs[4];
-        float *d2 = &coeffs[8];
-        float *d1 = &coeffs[16];
-
-        const float amount = Clamp01(rt.c1);
-        const float feedback = std::clamp(rt.c2, 0.0f, 0.8f);
-        const float damping = Clamp01(rt.c3);
-        const float diffusion = Clamp01(rt.c4);
-        const float tilt = Clamp01(rt.c5);
-
-        const float up1 = amount * (0.15f + 0.20f * tilt);
-        const float up2 = amount * (0.10f + 0.30f * tilt);
-        const float up3 = amount * (0.05f + 0.40f * tilt);
-
-        for (int i = 0; i < 4; ++i)
-        {
-            d3[i] += a3[i] * up1;
-        }
-        for (int i = 0; i < 8; ++i)
-        {
-            d2[i] += d3[i >> 1] * up2;
-        }
-        for (int i = 0; i < 16; ++i)
-        {
-            d1[i] += d2[i >> 1] * up3;
-        }
-
-        const float dampD3 = 1.0f - 0.25f * damping;
-        const float dampD2 = 1.0f - 0.40f * damping;
-        const float dampD1 = 1.0f - 0.60f * damping;
-        for (int i = 0; i < 4; ++i)
-        {
-            d3[i] *= dampD3;
-        }
-        for (int i = 0; i < 8; ++i)
-        {
-            d2[i] *= dampD2;
-        }
-        for (int i = 0; i < 16; ++i)
-        {
-            d1[i] *= dampD1;
-        }
-
-        for (int i = 0; i < kBlock; ++i)
-        {
-            float v = coeffs[i] + fb[i] * feedback;
-            if (i >= 16 && (i & 1))
-            {
-                const float decor = -v * stereoPolarity;
-                v = Lerp(v, decor, diffusion * 0.35f);
-            }
-            coeffs[i] = std::clamp(v, -1.5f, 1.5f);
-            fb[i] = coeffs[i] * kLeak;
-        }
-
-        InverseHaar(coeffs, tmp);
-
-        for (int i = 0; i < kBlock; ++i)
-        {
-            out[i] = SoftLimit(coeffs[i] * 0.95f);
-        }
-    }
-
-    float sampleRate_ = 48000.0f;
-    int blockIndex_ = 0;
-    float inBlockL_[kBlock];
-    float inBlockR_[kBlock];
-    float outBlockL_[kBlock];
-    float outBlockR_[kBlock];
-    float fbCoeffsL_[kBlock];
-    float fbCoeffsR_[kBlock];
-};
-
 class AlgoNws
 {
 public:
@@ -1706,14 +1489,14 @@ private:
 
         ForwardHaar(coeffs, tmp);
 
-        const float scramble = 0.35f + 0.65f * Clamp01(rt.c1);
+        const float scramble = std::clamp(Clamp01(rt.c1) * (1.15f + HotEnd(rt.c1) * 0.35f), 0.0f, 1.0f);
         const float rate = Clamp01(rt.c2);
         // Bias toward smoother default behavior around center settings.
         const float smoothing = std::pow(Clamp01(rt.c3), 0.75f);
         const float spread = Clamp01(rt.c4);
         const float tilt = Clamp01(rt.c5);
 
-        const int updateEvery = 1 + static_cast<int>((1.0f - rate) * (1.0f - rate) * 23.0f + 0.5f);
+        const int updateEvery = 1 + static_cast<int>((1.0f - rate) * (1.0f - rate) * 17.0f + 0.5f);
         if (++blockCounter_ >= updateEvery)
         {
             blockCounter_ = 0;
@@ -1790,15 +1573,15 @@ private:
         for (int i = 0; i < kBlock; ++i)
         {
             smooth[i] += (coeffs[i] - smooth[i]) * alpha;
-            coeffs[i] = std::clamp(smooth[i], -1.5f, 1.5f);
+            coeffs[i] = std::clamp(smooth[i], -2.0f, 2.0f);
         }
 
         InverseHaar(coeffs, tmp);
 
         for (int i = 0; i < kBlock; ++i)
         {
-            const float dryKeep = 0.20f * (1.0f - scramble);
-            out[i] = SoftLimit(coeffs[i] * 0.98f + in[i] * dryKeep);
+            const float dryKeep = 0.12f * (1.0f - scramble);
+            out[i] = SoftLimit(coeffs[i] * (1.0f + HotEnd(scramble) * 0.25f) + in[i] * dryKeep);
         }
     }
 
@@ -1815,7 +1598,111 @@ private:
     float smoothCoeffsR_[kBlock];
 };
 
-class AlgoNwg
+class AlgoNmb
+{
+public:
+    void Init(float sampleRate)
+    {
+        sampleRate_ = sampleRate;
+        for (int i = 0; i < kModes; ++i)
+        {
+            modeL_[i].Init(sampleRate_);
+            modeR_[i].Init(sampleRate_);
+        }
+        Reset();
+    }
+
+    void Reset()
+    {
+        controlCounter_ = 0;
+        for (int i = 0; i < kModes; ++i)
+        {
+            gain_[i] = 0.0f;
+        }
+    }
+
+    void Process(float inL, float inR, const NeuroticRuntime &rt, float &outL, float &outR)
+    {
+        if (controlCounter_ <= 0)
+        {
+            UpdateControls(rt);
+            controlCounter_ = kControlInterval;
+        }
+        controlCounter_--;
+
+        const float input = 0.5f * (inL + inR);
+        float odd = 0.0f;
+        float even = 0.0f;
+        for (int i = 0; i < kModes; ++i)
+        {
+            modeL_[i].Process(input);
+            modeR_[i].Process(input);
+            const float l = modeL_[i].Band() * gain_[i];
+            const float r = modeR_[i].Band() * gain_[i];
+            if (i & 1)
+            {
+                even += 0.5f * (l + r);
+            }
+            else
+            {
+                odd += 0.5f * (l + r);
+            }
+        }
+
+        outL = SoftLimit(odd * 2.2f);
+        outR = SoftLimit(even * 2.2f);
+    }
+
+private:
+    static constexpr int kModes = 12;
+    static constexpr int kControlInterval = 16;
+
+    void UpdateControls(const NeuroticRuntime &rt)
+    {
+        const float root = MapPitch(rt.c1, 30.0f, 92.0f);
+        const float structure = Clamp01(rt.c2);
+        const float brightness = Clamp01(rt.c3);
+        const float damping = Clamp01(rt.c4);
+        const float position = Clamp01(rt.c5);
+        const float stiffness = Lerp(-0.025f, 0.105f, HotEnd(structure));
+        const float qBase = 6.0f + HotEnd(damping) * 42.0f;
+        const float bright = brightness * brightness;
+        float stretch = 1.0f;
+
+        for (int i = 0; i < kModes; ++i)
+        {
+            const float harmonic = static_cast<float>(i + 1);
+            const float freq = std::clamp(root * harmonic * stretch, 30.0f, sampleRate_ * 0.42f);
+            const float hi = static_cast<float>(i) / static_cast<float>(kModes - 1);
+            const float ampTilt = std::pow(1.0f - hi * 0.82f, 1.0f + (1.0f - bright) * 3.2f);
+            const float pickup = 0.5f - 0.5f * std::cos(kPi * harmonic * position);
+            gain_[i] = ampTilt * (0.20f + 0.80f * pickup);
+
+            modeL_[i].SetFreq(freq);
+            modeR_[i].SetFreq(std::clamp(freq * (1.0f + 0.0025f * static_cast<float>((i & 3) - 1)), 30.0f, sampleRate_ * 0.42f));
+            modeL_[i].SetRes(qBase * (1.0f - hi * 0.45f));
+            modeR_[i].SetRes(qBase * (1.0f - hi * 0.45f));
+
+            stretch += stiffness;
+            if (stiffness > 0.0f)
+            {
+                stretch += stiffness * hi * 0.25f;
+            }
+            else
+            {
+                stretch += stiffness * hi * 0.08f;
+            }
+        }
+    }
+
+    float sampleRate_ = 48000.0f;
+    daisysp::Svf modeL_[kModes];
+    daisysp::Svf modeR_[kModes];
+    float gain_[kModes];
+    int controlCounter_ = 0;
+};
+
+class AlgoNss
 {
 public:
     void Init(float sampleRate)
@@ -1826,187 +1713,173 @@ public:
 
     void Reset()
     {
-        std::fill(&inBlockL_[0], &inBlockL_[kBlock], 0.0f);
-        std::fill(&inBlockR_[0], &inBlockR_[kBlock], 0.0f);
-        std::fill(&outBlockL_[0], &outBlockL_[kBlock], 0.0f);
-        std::fill(&outBlockR_[0], &outBlockR_[kBlock], 0.0f);
-        gateGain_[0] = 1.0f;
-        gateGain_[1] = 1.0f;
-        gateGain_[2] = 1.0f;
-        step_ = 0;
-        blockIndex_ = 0;
+        for (int s = 0; s < kStrings; ++s)
+        {
+            std::fill(&string_[s][0], &string_[s][kDelay], 0.0f);
+            write_[s] = 0;
+            lp_[s] = 0.0f;
+        }
+        controlCounter_ = 0;
     }
 
     void Process(float inL, float inR, const NeuroticRuntime &rt, float &outL, float &outR)
     {
-        inBlockL_[blockIndex_] = inL;
-        inBlockR_[blockIndex_] = inR;
-        outL = outBlockL_[blockIndex_];
-        outR = outBlockR_[blockIndex_];
-
-        blockIndex_++;
-        if (blockIndex_ >= kBlock)
+        if (controlCounter_ <= 0)
         {
-            blockIndex_ = 0;
-            ProcessBlock(inBlockL_, inBlockR_, outBlockL_, outBlockR_, rt);
+            UpdateControls(rt);
+            controlCounter_ = kControlInterval;
         }
+        controlCounter_--;
+
+        const float input = 0.5f * (inL + inR);
+        float sumL = 0.0f;
+        float sumR = 0.0f;
+        for (int s = 0; s < kStrings; ++s)
+        {
+            const float delayed = Read(s, delay_[s]);
+            lp_[s] += (delayed - lp_[s]) * dampCoef_[s];
+            const float injected = input * excite_[s];
+            const float next = SoftClip(injected + lp_[s] * feedback_[s]);
+            string_[s][write_[s]] = next;
+            write_[s] = (write_[s] + 1) % kDelay;
+
+            const float voice = delayed * level_[s];
+            sumL += voice * panL_[s];
+            sumR += voice * panR_[s];
+        }
+
+        outL = SoftLimit(sumL * 2.4f);
+        outR = SoftLimit(sumR * 2.4f);
     }
 
 private:
-    static constexpr int kBlock = 32;
-    static constexpr int kSteps = 16;
-    static constexpr float kInvSqrt2 = 0.70710678118f;
+    static constexpr int kStrings = 3;
+    static constexpr size_t kDelay = 1024;
+    static constexpr int kControlInterval = 16;
 
-    void ForwardHaar(float *x, float *tmp) const
+    float Read(int s, float delaySamples) const
     {
-        int len = kBlock;
-        for (int level = 0; level < 3; ++level)
-        {
-            const int half = len / 2;
-            for (int i = 0; i < half; ++i)
-            {
-                const float a = x[2 * i];
-                const float b = x[2 * i + 1];
-                tmp[i] = (a + b) * kInvSqrt2;
-                tmp[half + i] = (a - b) * kInvSqrt2;
-            }
-            for (int i = 0; i < len; ++i)
-            {
-                x[i] = tmp[i];
-            }
-            len = half;
-        }
+        const float d = std::clamp(delaySamples, 2.0f, static_cast<float>(kDelay - 2));
+        float read = static_cast<float>(write_[s]) - d;
+        while (read < 0.0f)
+            read += static_cast<float>(kDelay);
+        const size_t i0 = static_cast<size_t>(read);
+        const size_t i1 = (i0 + 1) % kDelay;
+        const float frac = read - static_cast<float>(i0);
+        return string_[s][i0] + (string_[s][i1] - string_[s][i0]) * frac;
     }
 
-    void InverseHaar(float *x, float *tmp) const
+    void UpdateControls(const NeuroticRuntime &rt)
     {
-        for (int len = 8; len <= kBlock; len *= 2)
-        {
-            const int half = len / 2;
-            for (int i = 0; i < half; ++i)
-            {
-                const float a = x[i];
-                const float d = x[half + i];
-                tmp[2 * i] = (a + d) * kInvSqrt2;
-                tmp[2 * i + 1] = (a - d) * kInvSqrt2;
-            }
-            for (int i = 0; i < len; ++i)
-            {
-                x[i] = tmp[i];
-            }
-        }
-    }
-
-    bool EuclidHit(int step, int fills, int total, int rotation) const
-    {
-        if (fills <= 0)
-            return false;
-        const int idx = (step + rotation) % total;
-        return ((idx * fills) % total) < fills;
-    }
-
-    void ProcessBlock(const float *inL, const float *inR, float *outL, float *outR, const NeuroticRuntime &rt)
-    {
-        float coeffL[kBlock];
-        float coeffR[kBlock];
-        float tmp[kBlock];
-        for (int i = 0; i < kBlock; ++i)
-        {
-            coeffL[i] = inL[i];
-            coeffR[i] = inR[i];
-        }
-
-        ForwardHaar(coeffL, tmp);
-        ForwardHaar(coeffR, tmp);
-
-        float energy[3] = {0.0f, 0.0f, 0.0f};
-        for (int i = 0; i < 4; ++i)
-        {
-            energy[0] += std::fabs(coeffL[i]) + std::fabs(coeffR[i]);
-        }
-        for (int i = 4; i < 16; ++i)
-        {
-            energy[1] += std::fabs(coeffL[i]) + std::fabs(coeffR[i]);
-        }
-        for (int i = 16; i < 32; ++i)
-        {
-            energy[2] += std::fabs(coeffL[i]) + std::fabs(coeffR[i]);
-        }
-        energy[0] /= 8.0f;
-        energy[1] /= 24.0f;
-        energy[2] /= 32.0f;
-
-        const float threshold = 0.002f + 0.06f * Clamp01(rt.c1);
-        const int fills = std::clamp(1 + static_cast<int>(Clamp01(rt.c2) * 15.0f + 0.5f), 1, 16);
-        // Bias toward snappier gate releases around center settings.
-        const float release = std::pow(Clamp01(rt.c3), 1.35f);
-        const float weighting = Clamp01(rt.c4) * 2.0f - 1.0f;
-        const float tilt = Clamp01(rt.c5);
-
-        const float tCoarse = std::clamp(threshold * (1.1f + 0.8f * weighting), 0.002f, 0.9f);
-        const float tMid = std::clamp(threshold, 0.002f, 0.9f);
-        const float tFine = std::clamp(threshold * (1.1f - 0.8f * weighting), 0.002f, 0.9f);
-
-        const float attackCoef = 0.65f;
-        const float releaseCoef = 0.28f - 0.24f * release;
-
-        const int fineRotate = 2 + static_cast<int>(tilt * 5.0f + 0.5f);
-        const int midRotate = 1 + static_cast<int>(tilt * 2.0f + 0.5f);
-        const int coarseRotate = static_cast<int>(tilt * 3.0f + 0.5f);
-
-        const bool gateCoarse = EuclidHit(step_, fills, kSteps, coarseRotate) && energy[0] > tCoarse;
-        const bool gateMid = EuclidHit(step_, fills, kSteps, midRotate) && energy[1] > tMid;
-        const bool gateFine = EuclidHit(step_, fills, kSteps, fineRotate) && energy[2] > tFine;
-        step_ = (step_ + 1) % kSteps;
-
-        const float floor = 0.14f + 0.24f * release;
-        const float target[3] = {
-            gateCoarse ? 1.0f : floor,
-            gateMid ? 1.0f : floor,
-            gateFine ? 1.0f : floor,
+        static constexpr float kIntervals[3][kStrings] = {
+            {0.0f, 7.01955f, 12.0f},
+            {0.0f, 3.0f, 10.0f},
+            {0.0f, 12.0f, 24.0f},
         };
+        const float root = MapPitch(rt.c1, 30.0f, 82.0f);
+        const float spread = Clamp01(rt.c2);
+        const float damping = Clamp01(rt.c3);
+        const float brightness = Clamp01(rt.c4);
+        const float detune = (Clamp01(rt.c5) - 0.5f) * 2.0f;
+        const int chord = std::clamp(static_cast<int>(spread * 2.999f), 0, 2);
+        const float chordBlend = spread * 2.999f - static_cast<float>(chord);
 
-        for (int b = 0; b < 3; ++b)
+        for (int s = 0; s < kStrings; ++s)
         {
-            const float coef = (target[b] > gateGain_[b]) ? attackCoef : releaseCoef;
-            gateGain_[b] += (target[b] - gateGain_[b]) * coef;
-        }
-
-        for (int i = 0; i < 4; ++i)
-        {
-            coeffL[i] *= gateGain_[0];
-            coeffR[i] *= gateGain_[0];
-        }
-        for (int i = 4; i < 16; ++i)
-        {
-            coeffL[i] *= gateGain_[1];
-            coeffR[i] *= gateGain_[1];
-        }
-        for (int i = 16; i < 32; ++i)
-        {
-            coeffL[i] *= gateGain_[2];
-            coeffR[i] *= gateGain_[2];
-        }
-
-        InverseHaar(coeffL, tmp);
-        InverseHaar(coeffR, tmp);
-
-        const float makeup = 1.35f + 0.45f * (1.0f - Clamp01(rt.c2));
-        for (int i = 0; i < kBlock; ++i)
-        {
-            outL[i] = SoftLimit(coeffL[i] * makeup);
-            outR[i] = SoftLimit(coeffR[i] * makeup);
+            const int nextChord = std::min(chord + 1, 2);
+            const float semi = Lerp(kIntervals[chord][s], kIntervals[nextChord][s], chordBlend);
+            const float fine = detune * static_cast<float>((s * 5 + 3) % 7 - 3) * 0.018f;
+            const float freq = std::clamp(root * std::pow(2.0f, semi / 12.0f) * (1.0f + fine), 48.0f, sampleRate_ * 0.20f);
+            delay_[s] = sampleRate_ / freq;
+            feedback_[s] = std::clamp(0.72f + damping * 0.24f - static_cast<float>(s) * 0.018f, 0.45f, 0.975f);
+            dampCoef_[s] = 0.04f + brightness * brightness * 0.42f;
+            excite_[s] = (s == 0) ? 0.42f : (0.16f + brightness * 0.18f);
+            level_[s] = 1.0f / std::sqrt(static_cast<float>(s + 1));
+            const float pan = static_cast<float>(s) / static_cast<float>(kStrings - 1);
+            panL_[s] = std::sqrt(1.0f - pan);
+            panR_[s] = std::sqrt(pan);
         }
     }
 
     float sampleRate_ = 48000.0f;
-    int blockIndex_ = 0;
-    int step_ = 0;
-    float gateGain_[3] = {1.0f, 1.0f, 1.0f};
-    float inBlockL_[kBlock];
-    float inBlockR_[kBlock];
-    float outBlockL_[kBlock];
-    float outBlockR_[kBlock];
+    float string_[kStrings][kDelay];
+    size_t write_[kStrings];
+    float lp_[kStrings];
+    float delay_[kStrings];
+    float feedback_[kStrings];
+    float dampCoef_[kStrings];
+    float excite_[kStrings];
+    float level_[kStrings];
+    float panL_[kStrings];
+    float panR_[kStrings];
+    int controlCounter_ = 0;
+};
+
+class AlgoNfm
+{
+public:
+    void Init(float sampleRate)
+    {
+        sampleRate_ = sampleRate;
+        Reset();
+    }
+
+    void Reset()
+    {
+        carrierPhase_ = 0.0f;
+        modPhase_ = 0.0f;
+        envL_ = 0.0f;
+        envR_ = 0.0f;
+        prev_ = 0.0f;
+        lpL_ = 0.0f;
+        lpR_ = 0.0f;
+    }
+
+    void Process(float inL, float inR, const NeuroticRuntime &rt, float &outL, float &outR)
+    {
+        const float freq = MapPitch(rt.c1, 30.0f, 96.0f);
+        const float ratio = std::pow(2.0f, Lerp(-12.0f, 24.0f, Clamp01(rt.c2)) / 12.0f);
+        const float brightness = Clamp01(rt.c3);
+        const float feedback = (Clamp01(rt.c4) - 0.5f) * 2.0f;
+        const float damping = Clamp01(rt.c5);
+        const float inputEnv = std::min(1.0f, std::fabs(0.5f * (inL + inR)) * 4.0f);
+        const float attack = 0.01f + brightness * 0.08f;
+        const float release = 0.0004f + damping * damping * 0.02f;
+        const float target = std::max(inputEnv, 0.04f + damping * 0.16f);
+        envL_ += (target - envL_) * (target > envL_ ? attack : release);
+        envR_ += (target - envR_) * (target > envR_ ? attack : release);
+
+        const float modFreq = std::min(freq * ratio, sampleRate_ * 0.45f);
+        modPhase_ += modFreq / sampleRate_;
+        carrierPhase_ += freq / sampleRate_;
+        if (modPhase_ >= 1.0f)
+            modPhase_ -= 1.0f;
+        if (carrierPhase_ >= 1.0f)
+            carrierPhase_ -= 1.0f;
+
+        const float fbPhase = feedback < 0.0f ? feedback * feedback * prev_ * -0.55f : 0.0f;
+        const float mod = std::sin(kTwoPi * (modPhase_ + fbPhase));
+        const float index = (0.25f + brightness * 7.0f) * (0.35f + envL_ * 1.65f);
+        const float carrier = std::sin(kTwoPi * carrierPhase_ + mod * index + std::max(0.0f, feedback) * prev_ * 1.8f);
+        prev_ += (carrier - prev_) * 0.18f;
+
+        const float wet = (carrier + mod * 0.35f) * envL_;
+        const float cutoff = MapExpo(1.0f - damping, 180.0f, 16000.0f);
+        const float left = wet + inL * 0.20f;
+        const float right = (carrier - mod * 0.35f) * envR_ + inR * 0.20f;
+        outL = SoftLimit(OnePoleProcess(left, cutoff, sampleRate_, lpL_) * 1.45f);
+        outR = SoftLimit(OnePoleProcess(right, cutoff * 1.07f, sampleRate_, lpR_) * 1.45f);
+    }
+
+private:
+    float sampleRate_ = 48000.0f;
+    float carrierPhase_ = 0.0f;
+    float modPhase_ = 0.0f;
+    float envL_ = 0.0f;
+    float envR_ = 0.0f;
+    float prev_ = 0.0f;
+    float lpL_ = 0.0f;
+    float lpR_ = 0.0f;
 };
 
 class AlgoNbz
@@ -2162,20 +2035,18 @@ static AlgoNth s_algoNth;
 static AlgoBgm s_algoBgm;
 static AlgoNff s_algoNff;
 static AlgoNdm s_algoNdm;
-static AlgoNes s_algoNes;
 static AlgoNhc s_algoNhc;
 static AlgoNpl s_algoNpl;
-static AlgoNmg s_algoNmg;
 static AlgoNsm s_algoNsm;
-static AlgoNce s_algoNce;
 static AlgoNps s_algoNps;
 static AlgoNrv s_algoNrv;
 #if NEUROTIC_ENABLE_EUDELAY
 static AlgoNed s_algoNed;
 #endif
-static AlgoNwl s_algoNwl;
 static AlgoNws s_algoNws;
-static AlgoNwg s_algoNwg;
+static AlgoNmb s_algoNmb;
+static AlgoNss s_algoNss;
+static AlgoNfm s_algoNfm;
 static AlgoNbz s_algoNbz;
 
 void NeuroticAlgoBank::Init(float sampleRate)
@@ -2194,20 +2065,18 @@ void NeuroticAlgoBank::Init(float sampleRate)
     bgm_ = &s_algoBgm;
     nff_ = &s_algoNff;
     ndm_ = &s_algoNdm;
-    nes_ = &s_algoNes;
     nhc_ = &s_algoNhc;
     npl_ = &s_algoNpl;
-    nmg_ = &s_algoNmg;
     nsm_ = &s_algoNsm;
-    nce_ = &s_algoNce;
     nps_ = &s_algoNps;
     nrv_ = &s_algoNrv;
 #if NEUROTIC_ENABLE_EUDELAY
     ned_ = &s_algoNed;
 #endif
-    nwl_ = &s_algoNwl;
     nws_ = &s_algoNws;
-    nwg_ = &s_algoNwg;
+    nmb_ = &s_algoNmb;
+    nss_ = &s_algoNss;
+    nfm_ = &s_algoNfm;
     nbz_ = &s_algoNbz;
 
     ncr_->Init(sampleRate_);
@@ -2216,20 +2085,18 @@ void NeuroticAlgoBank::Init(float sampleRate)
     bgm_->Init(sampleRate_);
     nff_->Init(sampleRate_);
     ndm_->Init(sampleRate_);
-    nes_->Init(sampleRate_);
     nhc_->Init(sampleRate_);
     npl_->Init(sampleRate_);
-    nmg_->Init(sampleRate_);
     nsm_->Init(sampleRate_);
-    nce_->Init(sampleRate_);
     nps_->Init(sampleRate_);
     nrv_->Init(sampleRate_);
 #if NEUROTIC_ENABLE_EUDELAY
     ned_->Init(sampleRate_);
 #endif
-    nwl_->Init(sampleRate_);
     nws_->Init(sampleRate_);
-    nwg_->Init(sampleRate_);
+    nmb_->Init(sampleRate_);
+    nss_->Init(sampleRate_);
+    nfm_->Init(sampleRate_);
     nbz_->Init(sampleRate_);
 }
 
@@ -2259,44 +2126,38 @@ void NeuroticAlgoBank::Reset(int algoIndex)
         ndm_->Reset();
         break;
     case 6:
-        nes_->Reset();
-        break;
-    case 7:
         nhc_->Reset();
         break;
-    case 8:
+    case 7:
         npl_->Reset();
         break;
-    case 9:
-        nmg_->Reset();
-        break;
-    case 10:
+    case 8:
         nsm_->Reset();
         break;
-    case 11:
-        nce_->Reset();
-        break;
-    case 12:
+    case 9:
         nps_->Reset();
         break;
-    case 13:
+    case 10:
         nrv_->Reset();
         break;
 #if NEUROTIC_ENABLE_EUDELAY
-    case 14:
+    case 11:
         ned_->Reset();
         break;
 #endif
-    case 15:
-        nwl_->Reset();
-        break;
-    case 16:
+    case 12:
         nws_->Reset();
         break;
-    case 17:
-        nwg_->Reset();
+    case 13:
+        nmb_->Reset();
         break;
-    case 18:
+    case 14:
+        nss_->Reset();
+        break;
+    case 15:
+        nfm_->Reset();
+        break;
+    case 16:
         nbz_->Reset();
         break;
     default:
@@ -2327,44 +2188,38 @@ void NeuroticAlgoBank::Process(int algoIndex, float inL, float inR, const Neurot
         ndm_->Process(inL, inR, rt, outL, outR);
         break;
     case 6:
-        nes_->Process(inL, inR, rt, outL, outR);
-        break;
-    case 7:
         nhc_->Process(inL, inR, rt, outL, outR);
         break;
-    case 8:
+    case 7:
         npl_->Process(inL, inR, rt, outL, outR);
         break;
-    case 9:
-        nmg_->Process(inL, inR, rt, outL, outR);
-        break;
-    case 10:
+    case 8:
         nsm_->Process(inL, inR, rt, outL, outR);
         break;
-    case 11:
-        nce_->Process(inL, inR, rt, outL, outR);
-        break;
-    case 12:
+    case 9:
         nps_->Process(inL, inR, rt, outL, outR);
         break;
-    case 13:
+    case 10:
         nrv_->Process(inL, inR, rt, outL, outR);
         break;
 #if NEUROTIC_ENABLE_EUDELAY
-    case 14:
+    case 11:
         ned_->Process(inL, inR, rt, outL, outR);
         break;
 #endif
-    case 15:
-        nwl_->Process(inL, inR, rt, outL, outR);
-        break;
-    case 16:
+    case 12:
         nws_->Process(inL, inR, rt, outL, outR);
         break;
-    case 17:
-        nwg_->Process(inL, inR, rt, outL, outR);
+    case 13:
+        nmb_->Process(inL, inR, rt, outL, outR);
         break;
-    case 18:
+    case 14:
+        nss_->Process(inL, inR, rt, outL, outR);
+        break;
+    case 15:
+        nfm_->Process(inL, inR, rt, outL, outR);
+        break;
+    case 16:
         nbz_->Process(inL, inR, rt, outL, outR);
         break;
     default:

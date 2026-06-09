@@ -1,6 +1,6 @@
 # Neurotic Manual
 
-Neurotic is a 19‑algorithm processor for the kxmx_bluemchen hardware. Each algorithm has its own page and name at the top line. The **title line** is the algorithm selector (rotate encoder to change). Below the title are shared controls plus two or three algorithm‑specific parameters.
+Neurotic is a 17‑algorithm processor for the kxmx_bluemchen hardware. Each algorithm has its own page and name at the top line. The **title line** is the algorithm selector (rotate encoder to change). Below the title are shared controls plus two or three algorithm‑specific parameters. Most algorithms keep low and mid control settings playable, then push into more extreme behavior near the top of the control range.
 
 ## Hardware Controls
 - **Knob 1 + CV1 (C1)**: Primary performance control (algorithm‑specific).
@@ -52,9 +52,9 @@ Stereo spatializer with interaural time differences (ITD), equal‑power panning
 - **C4 Spin**: rotation amount (driven by global LFO).
 
 ### 4. Formant (Formant Forge)
-Three SVF band‑pass formant filters per channel with adjustable spread. ARTIC injects noise into the excitation. BREATH adds “air” (high‑passed input) and stereo formant divergence.
-- **C1 Vowel Pull**: base formant frequency.
-- **C2 Articulation**: formant spacing/spread.
+Three SVF band‑pass formant filters per channel morph through vowel anchors in a two‑axis vowel plane. The anchors are A/E/I/O/U style formant sets; moving C1 and C2 blends smoothly between them instead of simply scaling pitch. ARTIC injects noise into the excitation. BREATH adds “air” (high‑passed input) and stereo formant divergence.
+- **C1 Vowel X**: horizontal vowel morph axis.
+- **C2 Vowel Y**: vertical vowel morph axis.
 - **C3 ARTIC**: noise injection amount (default 0).
 - **C4 BREATH**: air mix and stereo divergence.
 - **C5 Res**: formant resonance (Q).
@@ -66,56 +66,35 @@ Dual short delays with sinusoidal modulation and feedback smear. Color tilts dry
 - **C3 Grain**: feedback amount in the diffusers.
 - **C4 Drift**: modulation rate/depth.
 
-### 6. Energy (Energy Shaper)
-Envelope‑linked dynamics shaper. Punch changes attack/release; glue links L/R envelopes; lift adds upward tilt; bias cross‑mixes channels.
-- **C1 Punch**: transient emphasis (faster attack).
-- **C2 Glue**: link between channels.
-- **C3 Lift**: output energy lift.
-- **C4 Bias**: cross‑channel blend.
-
-### 7. Harmonic (Harmonic Cartographer)
+### 6. Harmonic (Harmonic Cartographer)
 Spectral remap of bins into stretched and inharmonic grids, with gated sparsity and optional mirror folding from highs to lows.
 - **C1 Stretch**: harmonic spacing scale.
 - **C2 Inharm**: inharmonic bend amount.
 - **C3 Sparse**: gating/sparsity of partials.
 - **C4 Mirror**: fold highs into lows.
 
-### 8. PhaseLoom (Phase Loom)
+### 7. PhaseLoom (Phase Loom)
 Phase‑domain warp: phase swirl and tilt per bin with optional inter‑channel binding. Stereo control widens or narrows output energy.
 - **C1 Bind**: lock phase between L/R.
 - **C2 Swirl**: sinusoidal phase warp strength.
 - **C3 Tilt**: frequency‑dependent phase skew.
 - **C4 Stereo**: widen/narrow low‑bin energy.
 
-### 9. MicroGran (Micro‑Granulator)
-Micro‑granulation using short delay taps with windowed holds. Drift adds time jitter (not noise). Blend crossfades dry/grain.
-- **C1 Size**: grain length.
-- **C2 Drift**: random time jitter.
-- **C3 Blend**: dry ↔ grain.
-- **C4 Scatter**: stereo offset between grain taps.
-
-### 10. Smear (Neurotic Smear)
+### 8. Smear (Neurotic Smear)
 All‑pass pole chain with feedback for broad, phase‑smeared diffusion. LFO modulates frequency.
 - **C1 Frequency**: all‑pass frequency (LFO applied).
 - **C2 Resonance**: pole feedback intensity (kept stable).
 - **C3 Poles**: 2–128 pole count.
 - **C4 FDBK**: feedback amount.
 
-### 11. CompExp (Compressor/Expander)
-Dynamics shaper with global amount and time scaling. Attack/Decay are scaled by the overall time constant.
-- **C1 Amount**: compression (right) ↔ expansion (left).
-- **C2 Time**: overall time constant scale.
-- **C3 Atk**: attack time (scaled).
-- **C4 Dec**: decay time (scaled).
-
-### 12. PitchShift (Pitch Shifter)
+### 9. PitchShift (Pitch Shifter)
 Dual‑window delay pitch shifter with musical offset.
 - **C1 Pitch**: musical pitch offset (continuous, bipolar).
 - **C2 Scale**: scales the offset depth.
 - **C3 Win**: window length (quality vs latency).
 - **C4 Stereo**: slight L/R spread.
 
-### 13. Reverb (Neurotic Reverb)
+### 10. Reverb (Neurotic Reverb)
 Two‑delay reverb with prime‑spaced taps and cross‑feedback. Overall delay time is log‑scaled.
 - **C1 Time**: overall delay time (0.125×–4×, log scale).
 - **C2 Feedback**: feedback amount.
@@ -123,7 +102,7 @@ Two‑delay reverb with prime‑spaced taps and cross‑feedback. Overall delay 
 - **C4 Taps**: 1–10 taps at prime intervals.
 - **C5 Tilt**: emphasize longer vs shorter taps.
 
-### 14. EuDelay (Euclidean Delay)
+### 11. EuDelay (Euclidean Delay)
 Delay taps spaced using Euclidean rhythm. Taps and offsets follow the shared C1/C2 control path (Knob + CV bipolar mapping).
 - **C1 Taps**: number of taps (1–Steps).
 - **C2 Offset**: tap offset in steps (0–Steps‑1).
@@ -133,15 +112,7 @@ Delay taps spaced using Euclidean rhythm. Taps and offsets follow the shared C1/
 - **Feed**: global feedback amount for EuDelay (same as other algorithms).
 - **Implementation note**: internal delay memory runs at 8x downsample for longer effective delay time.
 
-### 15. WavLadr (Wavelet Shimmer Ladder Lite)
-Block-based Haar wavelet ladder that shifts energy from coarse to fine scales with bounded feedback.
-- **C1 Amount**: shimmer ladder amount (Knob 1 + CV1).
-- **C2 Feedback**: ladder feedback depth (Knob 2 + CV2).
-- **C3 Damp**: high-band damping to control brightness and ringing.
-- **C4 Diff**: stereo decorrelation in fine bands.
-- **C5 Tilt**: emphasizes higher ladder stages.
-
-### 16. WavScram (Wavelet Scale Scrambler)
+### 12. WavScram (Wavelet Scale Scrambler)
 Block-based Haar wavelet remap that scrambles coarse/mid/fine bands with smoothing.
 - **C1 Amount**: scramble depth (identity -> fully remapped).
 - **C2 Rate**: permutation change rate.
@@ -149,15 +120,31 @@ Block-based Haar wavelet remap that scrambles coarse/mid/fine bands with smoothi
 - **C4 Offs**: stereo offset between left/right remap.
 - **C5 Tilt**: coarse/fine spectral tilt after remap.
 
-### 17. WavGate (Wavelet Gate Matrix)
-Per-band wavelet gate driven by Euclidean hit logic and band energy thresholds.
-- **C1 Threshold**: gate sensitivity.
-- **C2 Density**: Euclidean hit density.
-- **C3 Rel**: gate release time.
-- **C4 Bias**: scale weighting (coarse <-> fine emphasis).
-- **C5 Tilt**: band rotation/tilt of rhythmic gating.
+### 13. ModalBank (Rings Modal Bank)
+Rings-inspired modal resonator bank using twelve stereo SVF band-pass modes. Structure bends the modal spacing from compressed/inharmonic to stretched, while position changes the pickup balance between modes.
+- **C1 Root**: fundamental/modal root frequency.
+- **C2 Structure**: modal stiffness and spacing.
+- **C3 Bright**: high-mode brightness.
+- **C4 Damp**: modal resonance/decay.
+- **C5 Pos**: pickup position across the modal bank.
 
-### 18. Bazzer (Crossover + Sub + Mid Drive)
+### 14. SympString (Rings Sympathetic Strings)
+Three lightweight Karplus strings tuned to sympathetic chord relationships. Input excites the main string and nearby sympathetic strings, with stereo spread across the bank.
+- **C1 Root**: root string frequency.
+- **C2 Chord**: chord/spread family.
+- **C3 Damp**: feedback/decay time.
+- **C4 Bright**: damping filter brightness and excitation.
+- **C5 Detn**: small detune/dispersion amount.
+
+### 15. FMRes (Rings FM Voice)
+Two-operator FM voice inspired by Rings' FM mode, with the input envelope driving FM amount and output level.
+- **C1 Carrier**: carrier pitch.
+- **C2 Ratio**: modulator ratio.
+- **C3 Bright**: FM index/brightness.
+- **C4 FB**: feedback character.
+- **C5 Damp**: envelope decay and tone damping.
+
+### 16. Bazzer (Crossover + Sub + Mid Drive)
 Stereo crossover processor with octave-down bass reinforcement, high-band enhancement, and band-passed distortion.
 - **C1 BassMix**: level of octave-down low-band reinforcement (both channels).
 - **C2 HighMix**: level of added high band (both channels).

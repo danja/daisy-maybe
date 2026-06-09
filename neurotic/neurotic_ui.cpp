@@ -7,11 +7,11 @@
 
 namespace
 {
-constexpr int kAlgoCount = (kNeuroticEnableReverb ? (kNeuroticEnableEuDelay ? 19 : 18) : 15);
-constexpr int kSmearIndex = 10;
-constexpr int kReverbIndex = 13;
-constexpr int kEuDelayIndex = 14;
-constexpr int kBazzerIndex = 18;
+constexpr int kAlgoCount = 17;
+constexpr int kSmearIndex = 8;
+constexpr int kReverbIndex = 10;
+constexpr int kEuDelayIndex = 11;
+constexpr int kBazzerIndex = 16;
 constexpr int kSmearPolesItemIndex = 4;
 constexpr int kReverbTapsItemIndex = 5;
 constexpr int kEuDelayStepsItemIndex = 4;
@@ -26,19 +26,17 @@ const char *kAlgoParamLabels[][3] = {
     {"Dist", "Spin", ""},       // 3 BGM
     {"Artic", "Breath", "Res"}, // 4 NFF
     {"Color", "Grain", ""},     // 5 NDM
-    {"Glue", "Bias", ""},       // 6 NES
-    {"Inharm", "Sparse", ""},   // 7 NHC
-    {"Swirl", "Tilt", ""},      // 8 NPL
-    {"Drift", "Scatt", ""},     // 9 NMG
-    {"Poles", "FB", ""},        // 10 NSM
-    {"Atk", "Dec", ""},         // 11 NCE
-    {"Win", "Stereo", ""},      // 12 NPS
-    {"Cross", "Taps", "Tilt"},  // 13 NRV
-    {"Steps", "BPM", "Scale"},  // 14 EUD
-    {"Damp", "Diff", "Tilt"},   // 15 NWL
-    {"Smth", "Offs", "Tilt"},   // 16 NWS
-    {"Rel", "Bias", "Tilt"},    // 17 NWG
-    {"Xovr", "Mid", "Drive"},   // 18 NBZ
+    {"Inharm", "Sparse", ""},   // 6 NHC
+    {"Swirl", "Tilt", ""},      // 7 NPL
+    {"Poles", "FB", ""},        // 8 NSM
+    {"Win", "Stereo", ""},      // 9 NPS
+    {"Cross", "Taps", "Tilt"},  // 10 NRV
+    {"Steps", "BPM", "Scale"},  // 11 EUD
+    {"Smth", "Offs", "Tilt"},   // 12 NWS
+    {"Bright", "Damp", "Pos"},  // 13 NMB
+    {"Damp", "Bright", "Detn"}, // 14 NSS
+    {"Bright", "FB", "Damp"},   // 15 NFM
+    {"Xovr", "Mid", "Drive"},   // 16 NBZ
 };
 
 const char *kAlgoNames[] = {
@@ -48,18 +46,16 @@ const char *kAlgoNames[] = {
     "Binaural",
     "Formant",
     "Diffusion",
-    "Energy",
     "Harmonic",
     "PhaseLoom",
-    "MicroGran",
     "Smear",
-    "CompExp",
     "PitchShift",
     "Reverb",
     "EuDelay",
-    "WavLadr",
     "WavScram",
-    "WavGate",
+    "ModalBank",
+    "SympString",
+    "FMRes",
     "Bazzer",
 };
 }

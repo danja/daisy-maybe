@@ -10,7 +10,7 @@ See also [Flues synth experiments](https://github.com/danja/flues) and [disyn-es
 - **resonators** *(awesome)*: Dual delay‑line resonators with 1V/oct tracking, wavefolding, cross‑feedback, filter damping, clock-size scaling, normalized multi-tap output, calibration, and bipolar knob/CV offsets. 
 - **slime** *(poor)*: Stereo FFT spectral processor with time smear, multiple spectral effects, debug pages, and bipolar knob/CV control. 
 - **uzi**: *(better than slime, but still not great)* Stereo spectral phaser with distortion front-end, spectral notching, crossover, and LFO modulation.
-- **neurotic**: *(good, but odd. Still tweaking)* 10‑algorithm neural‑inspired processor (says AI - there's nothing neural about it, it's more a mix of the above processing styles) with menu‑selectable models.
+- **neurotic**: *(good, but odd. Still tweaking)* 17‑algorithm neural‑inspired processor (says AI - there's nothing neural about it, it's more a mix of the above processing styles) with menu‑selectable models.
 
 **Status 2026-01-15 :** all tested on hardware and work according to some measure. There are quite a few rough edges - menu order, various parameters could be tweaked etc. But **reonators** and **neurotic** are currently in my rack.
 

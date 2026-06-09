@@ -21,18 +21,16 @@ const char *kAlgoNames[] = {
     "Binaural",
     "Formant",
     "Diffusion",
-    "Energy",
     "Harmonic",
     "PhaseLoom",
-    "MicroGran",
     "Smear",
-    "CompExp",
     "PitchShift",
     "Reverb",
     "EuDelay",
-    "WavLadr",
     "WavScram",
-    "WavGate",
+    "ModalBank",
+    "SympString",
+    "FMRes",
     "Bazzer",
 };
 
@@ -90,7 +88,7 @@ NeuroticRuntime RuntimeForAlgo(int algoIndex)
     rt.lfoDepth = 0.0f;
     rt.lfoRate = 0.2f;
 
-    if (algoIndex == 13)
+    if (algoIndex == 10)
     {
         rt.c1 = 0.60f; // time
         rt.c2 = 0.55f; // reverb feedback
@@ -98,7 +96,7 @@ NeuroticRuntime RuntimeForAlgo(int algoIndex)
         rt.c4 = 0.55f; // taps
         rt.c5 = 0.50f; // tilt
     }
-    else if (algoIndex == 14)
+    else if (algoIndex == 11)
     {
         rt.fb = 0.45f;
         rt.c1 = 0.50f; // taps
@@ -107,7 +105,7 @@ NeuroticRuntime RuntimeForAlgo(int algoIndex)
         rt.c4 = 0.50f; // bpm
         rt.c5 = 0.35f; // scale
     }
-    else if (algoIndex >= 15 && algoIndex <= 17)
+    else if (algoIndex == 12)
     {
         rt.c1 = 0.45f;
         rt.c2 = 0.35f;
@@ -115,7 +113,31 @@ NeuroticRuntime RuntimeForAlgo(int algoIndex)
         rt.c4 = 0.45f;
         rt.c5 = 0.50f;
     }
-    else if (algoIndex == 18)
+    else if (algoIndex == 13)
+    {
+        rt.c1 = 0.45f; // root
+        rt.c2 = 0.45f; // structure
+        rt.c3 = 0.70f; // brightness
+        rt.c4 = 0.55f; // damping
+        rt.c5 = 0.35f; // position
+    }
+    else if (algoIndex == 14)
+    {
+        rt.c1 = 0.42f; // root
+        rt.c2 = 0.40f; // chord/spread
+        rt.c3 = 0.68f; // damping
+        rt.c4 = 0.65f; // brightness
+        rt.c5 = 0.50f; // detune
+    }
+    else if (algoIndex == 15)
+    {
+        rt.c1 = 0.45f; // carrier
+        rt.c2 = 0.45f; // ratio
+        rt.c3 = 0.62f; // brightness
+        rt.c4 = 0.55f; // feedback
+        rt.c5 = 0.50f; // damping
+    }
+    else if (algoIndex == 16)
     {
         rt.c1 = 0.55f; // bass
         rt.c2 = 0.55f; // high
