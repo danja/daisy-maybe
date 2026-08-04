@@ -7,6 +7,7 @@ Guidance for working on the daisy-maybe repository (kxmx_bluemchen firmwares).
 - `daisy-dsf/` : DSF synthesizer firmware.
 - `resonators/` : Dual resonator delay firmware.
 - `slime/` : FFT spectral processor firmware.
+- `dirac/` : Granular synthesizer firmware (SD card samples, MIDI, mod matrix).
 - `docs/` : User manuals and requirements.
 
 ## Dependencies
@@ -28,6 +29,7 @@ Build from repo root:
 make -C daisy-dsf
 make -C resonators
 make -C slime
+make -C dirac
 ```
 
 Flash (DFU example):
@@ -35,6 +37,7 @@ Flash (DFU example):
 make -C daisy-dsf program-dfu
 make -C resonators program-dfu
 make -C slime program-dfu
+make -C dirac program-dfu
 ```
 
 ## Project Notes
@@ -42,6 +45,13 @@ make -C slime program-dfu
 - **daisy-dsf**: Uses DSF algorithms and formant synth. See `docs/dsf-manual.md`.
 - **resonators**: Dual delay lines, calibration mode, bipolar knob/CV offset mapping. See `docs/resonators-manual.md`.
 - **slime**: FFT spectral effects, debug pages, bipolar knob/CV mapping. See `docs/slime-manual.md`.
+- **dirac**: Time-domain granular synth ported from the ER-301 (Apache-2.0 — keep
+  `dirac/LICENSE` and `dirac/NOTICE` with any distribution). The DSP in
+  `dirac_engine.{h,cpp}` is deliberately libDaisy-free so it builds on the host:
+  test it with `make -C host_dsp dirac_fixture && ./host_dsp/dirac_fixture all`
+  before flashing. Note it sits at ~99.9% of the 128 KB internal flash — adding
+  code means either trimming or switching to `APP_TYPE = BOOT_QSPI`. See
+  `docs/dirac-manual.md` and `docs/dirac-plan.md`.
 
 ## Adding a New Firmware Project
 

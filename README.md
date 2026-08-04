@@ -11,6 +11,7 @@ See also [Flues synth experiments](https://github.com/danja/flues) and [disyn-es
 - **slime** *(poor)*: Stereo FFT spectral processor with time smear, multiple spectral effects, debug pages, and bipolar knob/CV control. 
 - **uzi**: *(better than slime, but still not great)* Stereo spectral phaser with distortion front-end, spectral notching, crossover, and LFO modulation.
 - **neurotic**: *(good, but odd. Still tweaking)* 17‑algorithm neural‑inspired processor (says AI - there's nothing neural about it, it's more a mix of the above processing styles) with menu‑selectable models.
+- **dirac** *(new, not yet hardware‑tested)*: Time‑domain granular synthesizer ported from the [ER‑301 Dirac](https://github.com/nickb808) unit (Apache‑2.0). Live‑input or SD‑card sample granulation, 16 grains, multi‑playhead chords, onset locking, binaural spread, 8 envelope shapes, feedback regeneration, a full MIDI implementation (notes, CC map + learn, program change, clock sync) and an assignable knob/CV modulation matrix. See [docs/dirac-manual.md](docs/dirac-manual.md).
 
 **Status 2026-01-15 :** all tested on hardware and work according to some measure. There are quite a few rough edges - menu order, various parameters could be tweaked etc. But **reonators** and **neurotic** are currently in my rack.
 

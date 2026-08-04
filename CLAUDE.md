@@ -184,7 +184,8 @@ float smoothed = smoother.Process(rawValue);
 - 2x audio inputs
 - 2x audio outputs
 - Rotary encoder with switch
-- 128x64 OLED display
+- 64x32 OLED display (`SSD130xI2c64x32Driver`) — with `Font_6x8` that is
+  10 characters by 4 rows
 
 ### Display Rendering
 
