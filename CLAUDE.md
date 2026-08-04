@@ -213,6 +213,14 @@ Key advantages:
 
 Avoid division by zero: check denominator before computing (threshold 1e-10f).
 
+## Version Control
+
+**Do not touch git unless explicitly asked.** No `commit`, `add`, `checkout`,
+`stash`, `reset`, `branch`, `merge`, `rebase`, `push`, or any other
+state-changing git command unless the request specifically says so. Leaving work
+uncommitted in the working tree is the expected state, not a problem to fix.
+Read-only inspection (`status`, `log`, `diff`) is fine.
+
 ## Development Workflow
 
 When modifying parameters or algorithms:
