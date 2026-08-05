@@ -11,6 +11,7 @@
 #include "encoder_handler.h"
 #include "filters.h"
 #include "menu_system.h"
+#include "resonator_models.h"
 
 using namespace daisy;
 using namespace kxmx;
@@ -55,6 +56,7 @@ namespace
 
     struct ResonatorParams
     {
+        int model = 0;
         float ratio = 1.0f;
         float mix = 1.0f;
         int size = 1;
@@ -105,6 +107,7 @@ namespace
 
 Bluemchen hw;
 DelayLinePair delays;
+RingsStyleModels ringsModels;
 FeedFilters feedFilters;
 DistortionChannel distortionX;
 DistortionChannel distortionY;
@@ -124,6 +127,7 @@ MenuItem wiringItems[] = {
 };
 
 MenuItem resonatorItems[] = {
+    {"Mode", MenuItemType::Int, nullptr, &resonatorParams.model, 0.0f, 3.0f, 1.0f},
     {"Ratio", MenuItemType::Ratio, &resonatorParams.ratio, nullptr, 0.25f, 4.0f, 0.05f},
     {"Mix", MenuItemType::Percent, &resonatorParams.mix, nullptr, 0.0f, 1.0f, 0.02f},
     {"Size", MenuItemType::Int, nullptr, &resonatorParams.size, 1.0f, 8.0f, 1.0f},
@@ -168,6 +172,9 @@ PersistentStorage<CalibSettings> *calibStorage = nullptr;
 
 float calibPhase = 0.0f;
 float sampleRate = 48000.0f;
+float modelFeedbackX = 0.0f;
+float modelFeedbackY = 0.0f;
+int lastAudioModel = 0;
 bool heartbeatOn = false;
 uint32_t lastHeartbeatMs = 0;
 bool ledOn = false;
@@ -206,8 +213,7 @@ void UpdateControls()
         const float pitchMultiplier = powf(2.0f, pitchOffset + cvOct);
         currentFreq = std::clamp(baseFreq * pitchMultiplier, kMinFreq, kMaxFreq);
         currentFreq2 = std::clamp(currentFreq * resonatorParams.ratio, kMinFreq, kMaxFreq);
-        const float waveControl = std::clamp((pot2 - 0.5f) * 2.0f + (cv2 - 0.5f) * 2.0f, -1.0f, 1.0f);
-        waveDepth = std::clamp(0.5f + waveControl * 0.8f, 0.0f, 1.0f);
+        waveDepth = std::clamp(pot2 + cv2, 0.0f, 1.0f);
     }
 
     const int encInc = hw.encoder.Increment();
@@ -303,12 +309,20 @@ void AudioCallback(AudioHandle::InputBuffer in,
     const float driveMix = distortionParams.driveMix;
     const float resMix = resonatorParams.mix;
     const float dryMix = 1.0f - resMix;
+    const ResonatorModel model = static_cast<ResonatorModel>(std::clamp(resonatorParams.model, 0, 3));
     const float feedXX = wiringParams.feedXX;
     const float feedYY = wiringParams.feedYY;
     const float feedXY = wiringParams.feedXY;
     const float feedYX = wiringParams.feedYX;
     const int folds = distortionParams.folds;
     const int tapCount = GetTapCount(resonatorParams);
+
+    if (static_cast<int>(model) != lastAudioModel)
+    {
+        modelFeedbackX = 0.0f;
+        modelFeedbackY = 0.0f;
+        lastAudioModel = static_cast<int>(model);
+    }
 
     float inPeakX = 0.0f;
     float inPeakY = 0.0f;
@@ -332,10 +346,12 @@ void AudioCallback(AudioHandle::InputBuffer in,
         const float inX = SoftClipSample(in[0][i]);
         const float inY = SoftClipSample(in[1][i]);
 
-        const float resX = delays.Read1();
-        const float resY = delays.Read2();
+        const float delayResX = delays.Read1();
+        const float delayResY = delays.Read2();
         const float tapOutX = ReadPrimeSpacedTaps(delays.d1, delaySamples1, tapCount);
         const float tapOutY = ReadPrimeSpacedTaps(delays.d2, delaySamples2, tapCount);
+        const float resX = (model == ResonatorModel::Delay) ? delayResX : modelFeedbackX;
+        const float resY = (model == ResonatorModel::Delay) ? delayResY : modelFeedbackY;
 
         const float filteredX = feedFilters.ProcessX(resX);
         const float filteredY = feedFilters.ProcessY(resY);
@@ -362,12 +378,33 @@ void AudioCallback(AudioHandle::InputBuffer in,
         const float makeupX = distortionX.ApplyMakeup(driveMixX);
         const float makeupY = distortionY.ApplyMakeup(driveMixY);
 
-        // Blend folded and overdriven signals before the resonators.
-        delays.Write1(SoftClipSample(makeupX));
-        delays.Write2(SoftClipSample(makeupY));
+        if (model == ResonatorModel::Delay)
+        {
+            // Blend folded and overdriven signals before the resonators.
+            delays.Write1(SoftClipSample(makeupX));
+            delays.Write2(SoftClipSample(makeupY));
 
-        out[0][i] = dryMix * inX + resMix * tapOutX;
-        out[1][i] = dryMix * inY + resMix * tapOutY;
+            out[0][i] = dryMix * inX + resMix * tapOutX;
+            out[1][i] = dryMix * inY + resMix * tapOutY;
+        }
+        else
+        {
+            ModelProcessParams params;
+            params.freqX = currentFreq;
+            params.freqY = currentFreq2;
+            params.ratio = resonatorParams.ratio;
+            params.size = resonatorParams.size;
+            params.taps = tapCount;
+
+            float modelOutX = 0.0f;
+            float modelOutY = 0.0f;
+            ringsModels.Process(model, SoftClipSample(makeupX), SoftClipSample(makeupY), params, modelOutX, modelOutY);
+            modelFeedbackX = modelOutX;
+            modelFeedbackY = modelOutY;
+
+            out[0][i] = dryMix * inX + resMix * modelOutX;
+            out[1][i] = dryMix * inY + resMix * modelOutY;
+        }
     }
 
     if (!calibMode)
@@ -385,6 +422,7 @@ int main(void)
     sampleRate = hw.AudioSampleRate();
 
     delays.Init();
+    ringsModels.Init(sampleRate);
     feedFilters.Init(sampleRate);
 
     distortionX.Reset();

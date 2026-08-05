@@ -184,7 +184,8 @@ float smoothed = smoother.Process(rawValue);
 - 2x audio inputs
 - 2x audio outputs
 - Rotary encoder with switch
-- 128x64 OLED display
+- 64x32 OLED display (`SSD130xI2c64x32Driver`) — with `Font_6x8` that is
+  10 characters by 4 rows
 
 ### Display Rendering
 
@@ -211,6 +212,14 @@ Key advantages:
 - Simple parametric control of complex spectra
 
 Avoid division by zero: check denominator before computing (threshold 1e-10f).
+
+## Version Control
+
+**Do not touch git unless explicitly asked.** No `commit`, `add`, `checkout`,
+`stash`, `reset`, `branch`, `merge`, `rebase`, `push`, or any other
+state-changing git command unless the request specifically says so. Leaving work
+uncommitted in the working tree is the expected state, not a problem to fix.
+Read-only inspection (`status`, `log`, `diff`) is fine.
 
 ## Development Workflow
 
