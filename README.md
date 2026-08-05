@@ -1,6 +1,6 @@
 # kxmx_bluemchen Firmware Collection
 
-A set of firmwares for the [kxmx_bluemchen](https://kxmx-bluemchen.recursinging.com/) Eurorack module, including DSF synthesis, dual resonators, spectral processors (Slime, Uzi), and the Neurotic neural‑inspired suite.
+A set of firmwares for the [kxmx_bluemchen](https://kxmx-bluemchen.recursinging.com/) Eurorack module, including DSF synthesis, dual resonators, spectral processors (Slime, Uzi), granular synthesis (Dirac), and the Neurotic neural‑inspired suite.
 
 See also [Flues synth experiments](https://github.com/danja/flues) and [disyn-esp32](https://github.com/danja/disyn-esp32)
 
@@ -11,9 +11,9 @@ See also [Flues synth experiments](https://github.com/danja/flues) and [disyn-es
 - **slime** *(poor)*: Stereo FFT spectral processor with time smear, multiple spectral effects, debug pages, and bipolar knob/CV control. 
 - **uzi**: *(better than slime, but still not great)* Stereo spectral phaser with distortion front-end, spectral notching, crossover, and LFO modulation.
 - **neurotic**: *(good, but odd. Still tweaking)* 17‑algorithm neural‑inspired processor (says AI - there's nothing neural about it, it's more a mix of the above processing styles) with menu‑selectable models.
-- **dirac** *(new, not yet hardware‑tested)*: Time‑domain granular synthesizer ported from the [ER‑301 Dirac](https://github.com/nickb808) unit (Apache‑2.0). Live‑input or SD‑card sample granulation, 16 grains, multi‑playhead chords, onset locking, binaural spread, 8 envelope shapes, feedback regeneration, a full MIDI implementation (notes, CC map + learn, program change, clock sync) and an assignable knob/CV modulation matrix. See [docs/dirac-manual.md](docs/dirac-manual.md).
+- **dirac** *(first prototype basically works — needs evaluation)*: Time‑domain granular synthesizer ported from the [ER‑301 Dirac](https://github.com/nickb808) unit (Apache‑2.0). Live‑input or SD‑card sample granulation, 16 grains, multi‑playhead chords, onset locking, binaural spread, 8 envelope shapes, feedback regeneration, a full MIDI implementation (notes, CC map + learn, program change, clock sync) and an assignable knob/CV modulation matrix. See [docs/dirac-manual.md](docs/dirac-manual.md).
 
-**Status 2026-01-15 :** all tested on hardware and work according to some measure. There are quite a few rough edges - menu order, various parameters could be tweaked etc. But **reonators** and **neurotic** are currently in my rack.
+**Status 2026-08-05 :** all tested on hardware and work according to some measure. There are quite a few rough edges - menu order, various parameters could be tweaked etc. I did have **resonators** (good) and **neurotic** (part good/part not so good) in my rack, but I've now turned over the first to try out **dirac**.
 
 ## daisy-dsf Features
 
@@ -189,6 +189,7 @@ Additional docs:
 - [docs/slime-manual.md](docs/slime-manual.md)
 - [docs/uzi-manual.md](docs/uzi-manual.md)
 - [docs/neurotic-manual.md](docs/neurotic-manual.md)
+- [docs/dirac-manual.md](docs/dirac-manual.md) — and the condensed [docs/dirac-quickref.md](docs/dirac-quickref.md)
 - [docs/dependencies.md](docs/dependencies.md)
 
 ### Quick Start
