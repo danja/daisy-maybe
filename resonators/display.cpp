@@ -79,6 +79,21 @@ void RenderDisplay(Bluemchen &hw, const DisplayData &data)
                          line.label,
                          line.intValue);
                 break;
+            case MenuItemType::Enum:
+            case MenuItemType::Action:
+                /* 10 characters fit across the panel; WriteString stops at the
+                 * right edge, so a long name clips rather than wrapping. */
+                snprintf(buf, sizeof(buf), "%c%-4s %s",
+                         line.selected ? '*' : ' ',
+                         line.label,
+                         line.text);
+                break;
+            case MenuItemType::Name:
+                /* No label: the name is the row. */
+                snprintf(buf, sizeof(buf), "%c%s",
+                         line.selected ? '*' : ' ',
+                         line.text);
+                break;
             }
             hw.display.SetCursor(0, row);
             hw.display.WriteString(buf, Font_6x8, true);

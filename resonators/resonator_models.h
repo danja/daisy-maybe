@@ -6,6 +6,8 @@
 
 #include "daisysp.h"
 #include "distortion.h"
+#include "filters.h" // SoftClipSample
+#include "modal_bodies.h"
 
 enum class ResonatorModel
 {
@@ -13,7 +15,57 @@ enum class ResonatorModel
     ModalBank = 1,
     SympString = 2,
     FMRes = 3,
+    /* Struck bodies, all served by ModalBodyVoice. This run must stay
+     * contiguous and in the same order as res::kBodies. */
+    Beam = 4,
+    Marimba = 5,
+    Drumhead = 6,
+    Membrane = 7,
+    Plate = 8,
 };
+
+constexpr int kNumResonatorModels = 9;
+constexpr int kFirstBodyModel = static_cast<int>(ResonatorModel::Beam);
+
+inline bool IsBodyModel(ResonatorModel m)
+{
+    const int i = static_cast<int>(m);
+    return i >= kFirstBodyModel && i < kNumResonatorModels;
+}
+
+/* Makeup applied to the resonator's contribution to the OUTPUT MIX only —
+ * never to what returns through the feed matrix. The two have to be separate:
+ * a model's output gain sits inside its own feedback loop, so raising it to a
+ * usable level lowers the drone threshold by exactly the same factor. SympString
+ * measured 17 dB below the other models at the feed that let it ring, and every
+ * attempt to fix that in the model itself just moved the oscillation point. */
+inline float ModelOutGain(ResonatorModel m)
+{
+    return (m == ResonatorModel::SympString) ? 7.0f : 1.0f;
+}
+
+/* How much of the Wiring page's feed each model can take before it stops
+ * resonating and starts oscillating. A plain delay line has no regeneration of
+ * its own and needs the full amount; everything else already rings internally,
+ * so the same feed that makes Delay sing makes them drone. Measured by sweeping
+ * feed against ring time — see host_dsp/loop_fixture.cpp. */
+inline float ModelFeedScale(ResonatorModel m)
+{
+    switch(m)
+    {
+    case ResonatorModel::Delay:
+        return 1.0f; // no internal feedback; the matrix *is* its resonance
+    case ResonatorModel::SympString:
+        return 0.22f; // its strings already regenerate, and Taps raises their
+                      // own feedback too -- above ~0.3 the pair locks on
+    case ResonatorModel::FMRes:
+        return 0.15f; // self-oscillates above ~0.2
+    case ResonatorModel::ModalBank:
+        return 0.0f; // at ringing Q even 0.04 sustains it; its own Q is the ring
+    default:
+        return 0.0f; // struck bodies: high-Q modes, no loop survives them
+    }
+}
 
 struct ModelProcessParams
 {
@@ -22,6 +74,7 @@ struct ModelProcessParams
     float ratio = 1.0f;
     int size = 1;
     int taps = 1;
+    float decay = 0.5f;
 };
 
 class ModalBankModel
@@ -75,8 +128,8 @@ public:
             }
         }
 
-        outX = SoftClipSample(odd * 2.0f);
-        outY = SoftClipSample(even * 2.0f);
+        outX = SoftClipSample(odd * 40.0f);
+        outY = SoftClipSample(even * 40.0f);
     }
 
 private:
@@ -96,7 +149,14 @@ private:
         const float structure = std::clamp((std::log2(std::clamp(p.ratio, 0.25f, 4.0f)) + 2.0f) * 0.25f, 0.0f, 1.0f);
         const float root = std::clamp(p.freqX / (1.0f + size * 3.0f), 20.0f, sampleRate_ * 0.18f);
         const float stiffness = -0.025f + HotEnd(structure) * 0.13f;
-        const float qBase = 8.0f + density * 44.0f;
+        /* Svf::SetRes takes a NORMALISED resonance and clamps to [0,1]. This
+         * used to pass a Q-like 8..52, so every mode sat pinned at maximum
+         * resonance: `density` did nothing, and with any feed at all the bank
+         * self-oscillated into a permanent drone. Mapped into range, the modes
+         * ring and decay, and `density` finally does something. The ceiling
+         * matters: measured on the host, the bank self-oscillates on its own
+         * above about 0.985, so Taps at maximum must still land clear of it. */
+        const float qBase = 0.940f + density * 0.035f;
         const float bright = 1.0f - size * 0.55f;
         float stretch = 1.0f;
 
@@ -111,8 +171,12 @@ private:
 
             modeL_[i].SetFreq(freq);
             modeR_[i].SetFreq(std::clamp(freq * (1.0f + 0.002f * static_cast<float>((i & 3) - 1)), 30.0f, sampleRate_ * 0.42f));
-            modeL_[i].SetRes(qBase * (1.0f - hi * 0.42f));
-            modeR_[i].SetRes(qBase * (1.0f - hi * 0.42f));
+            /* Upper modes damp faster, as in a real body. Subtractive, not
+             * multiplicative: near 1.0 the Svf's damping is fiercely
+             * nonlinear, and scaling would kill the top modes outright. */
+            const float res = qBase - hi * 0.05f;
+            modeL_[i].SetRes(res);
+            modeR_[i].SetRes(res);
 
             stretch += stiffness;
             stretch += stiffness * hi * (stiffness > 0.0f ? 0.25f : 0.08f);
@@ -262,7 +326,11 @@ public:
         const float bright = std::clamp(static_cast<float>(p.taps - 1) / 4.0f, 0.0f, 1.0f);
         const float damping = std::clamp(static_cast<float>(p.size - 1) / 7.0f, 0.0f, 1.0f);
         const float inputEnv = std::min(1.0f, std::fabs(0.5f * (inX + inY)) * 4.0f);
-        const float target = std::max(inputEnv, 0.04f + damping * 0.16f);
+        /* The envelope used to be floored at 0.04..0.20, so the carrier never
+         * stopped sounding and the model was a drone rather than something you
+         * strike. Tracking the input all the way to zero makes it respond to
+         * an input signal or a MIDI-fired mallet and then fall silent. */
+        const float target = inputEnv;
         const float attack = 0.01f + bright * 0.08f;
         const float release = 0.0004f + damping * damping * 0.02f;
         envX_ += (target - envX_) * (target > envX_ ? attack : release);
@@ -318,6 +386,7 @@ public:
         modal_.Init(sampleRate);
         strings_.Init(sampleRate);
         fm_.Init(sampleRate);
+        body_.Init(sampleRate);
         lastModel_ = ResonatorModel::Delay;
     }
 
@@ -340,6 +409,21 @@ public:
         case ResonatorModel::FMRes:
             fm_.Process(inX, inY, params, outX, outY);
             break;
+        case ResonatorModel::Beam:
+        case ResonatorModel::Marimba:
+        case ResonatorModel::Drumhead:
+        case ResonatorModel::Membrane:
+        case ResonatorModel::Plate:
+        {
+            const res::BodySpec &spec
+                = res::kBodies[static_cast<int>(model) - kFirstBodyModel];
+            body_.SetParams(spec, params.freqX, params.size, params.taps, params.ratio,
+                            params.decay);
+            body_.Process(0.5f * (inX + inY), outX, outY);
+            outX = SoftClipSample(outX);
+            outY = SoftClipSample(outY);
+            break;
+        }
         case ResonatorModel::Delay:
         default:
             outX = inX;
@@ -362,6 +446,13 @@ private:
         case ResonatorModel::FMRes:
             fm_.Reset();
             break;
+        case ResonatorModel::Beam:
+        case ResonatorModel::Marimba:
+        case ResonatorModel::Drumhead:
+        case ResonatorModel::Membrane:
+        case ResonatorModel::Plate:
+            body_.Reset();
+            break;
         case ResonatorModel::Delay:
         default:
             break;
@@ -371,5 +462,6 @@ private:
     ModalBankModel modal_;
     SympStringModel strings_;
     FMResModel fm_;
+    res::ModalBodyVoice body_;
     ResonatorModel lastModel_ = ResonatorModel::Delay;
 };

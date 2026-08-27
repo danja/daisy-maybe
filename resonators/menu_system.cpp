@@ -6,7 +6,20 @@ namespace
 {
 void ClampMenuItem(MenuItem &item, int inc)
 {
-    if (item.type == MenuItemType::Int && item.intValue)
+    if (item.type == MenuItemType::Action)
+    {
+        /* Either direction fires once: the row is a button, not a value. */
+        if (item.action)
+        {
+            item.action();
+        }
+        return;
+    }
+
+    const bool isIntType = item.type == MenuItemType::Int
+                           || item.type == MenuItemType::Enum
+                           || item.type == MenuItemType::Name;
+    if (isIntType && item.intValue)
     {
         const int minVal = static_cast<int>(item.min);
         const int maxVal = static_cast<int>(item.max);
@@ -116,14 +129,39 @@ void MenuBuildVisibleLines(const MenuState &state,
         MenuLine &line = lines[outCount];
         line.label = item.label;
         line.type = item.type;
+        line.text = "";
         line.selected = (state.selectedIndex - 1) == itemIndex;
-        if (item.type == MenuItemType::Int && item.intValue)
+        switch (item.type)
         {
-            line.intValue = *item.intValue;
-        }
-        else if (item.value)
-        {
-            line.value = *item.value;
+        case MenuItemType::Enum:
+        case MenuItemType::Name:
+            if (item.intValue)
+            {
+                line.intValue = *item.intValue;
+            }
+            if (item.nameFn)
+            {
+                line.text = item.nameFn(line.intValue);
+            }
+            break;
+        case MenuItemType::Action:
+            if (item.nameFn)
+            {
+                line.text = item.nameFn(0);
+            }
+            break;
+        case MenuItemType::Int:
+            if (item.intValue)
+            {
+                line.intValue = *item.intValue;
+            }
+            break;
+        default:
+            if (item.value)
+            {
+                line.value = *item.value;
+            }
+            break;
         }
         ++outCount;
     }
