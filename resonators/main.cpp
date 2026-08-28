@@ -706,7 +706,10 @@ void AudioCallback(AudioHandle::InputBuffer in,
     /* One feed term per channel, straight through. There is deliberately no
      * X-Y or Y-X path: cross-feed made the two outputs collapse into each
      * other, and the two channels are meant to be independent voices. */
-    const float feed = feedAmount * kMaxFeed * feedScale;
+    /* FeedTaper, not the raw knob: see its comment. A linear map put the
+     * entire audible range in the last few percent of travel, which is what
+     * "Pot 2 does nothing" actually was. */
+    const float feed = FeedTaper(feedAmount) * kMaxFeed * feedScale;
 
     /* Excitation is summed into both inputs ahead of the wavefolder, so the
      * distortion stage shapes a struck sample exactly as it shapes live audio. */

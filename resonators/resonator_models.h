@@ -77,6 +77,30 @@ inline float ModelFeedScale(ResonatorModel m)
     }
 }
 
+/* Knob taper for the feedback control.
+ *
+ * Ring time goes as 1/(1-g), so a linear knob is almost entirely dead: measured
+ * on the Delay model, three quarters of the travel sat at a 55 ms tail and the
+ * whole audible range was crammed into the last few percent. That is why Pot 2
+ * read as having no effect at all — it was working, just not anywhere you would
+ * find by turning it.
+ *
+ * 1-exp(-a*k), normalised so full travel still maps to exactly 1.0, spends the
+ * knob where the ring actually changes. a = 8 was picked by measurement: the
+ * Delay tail then runs 0.055, 0.105, 0.305, 0.655, 0.955, 1.155 s across the
+ * sweep — monotonic, roughly doubling, and never running away.
+ *
+ * Normalising to 1.0 matters for safety as well as feel: every per-model limit
+ * below was measured at full knob, and a taper that overshot would invalidate
+ * all of them. */
+inline float FeedTaper(float knob)
+{
+    constexpr float kA = 8.0f;
+    const float k = std::clamp(std::fabs(knob), 0.0f, 1.0f);
+    const float c = (1.0f - std::exp(-kA * k)) / (1.0f - std::exp(-kA));
+    return (knob < 0.0f) ? -c : c;
+}
+
 struct ModelProcessParams
 {
     float freqX = 440.0f;

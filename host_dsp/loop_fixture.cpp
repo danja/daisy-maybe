@@ -36,7 +36,7 @@ struct Row { const char *name; ResonatorModel m; };
  * directly -- it read a third of everything else on hardware because it was
  * being soft-clipped twice over. Measured against the dry path, which is what
  * the Mix control crossfades it against. */
-static int MeasureDelay(int taps, float feed)
+static int MeasureDelay(int taps, float knob)
 {
     static DelayBuffer<kMaxDelaySamples> line;
     line.Init();
@@ -44,6 +44,8 @@ static int MeasureDelay(int taps, float feed)
     ff.Init(SR);
     ff.SetParams(0.2f, 0.25f, 0.7f, 220.0f, 220.0f);
 
+    /* Knob in, loop coefficient out — the same two steps the firmware takes. */
+    const float feed = FeedTaper(knob) * 0.99f;
     const float delaySamples = SR / 220.0f;
     line.SetDelay(delaySamples);
 
@@ -81,7 +83,7 @@ static int MeasureDelay(int taps, float feed)
      * this row exists to catch. At maximum feed the loop must also stay inside
      * LimitSample's asymptote rather than run away. */
     const bool ok = std::isfinite(outRms) && ratio > 0.5f && outRms < 2.0f;
-    std::printf("%-11s %3d  %4.2f  dry %.3f -> wet %.3f (%.2fx)%s\n", "Delay", taps, feed,
+    std::printf("%-11s %3d  %4.2f  dry %.3f -> wet %.3f (%.2fx)%s\n", "Delay", taps, knob,
                 inRms, outRms, ratio, ok ? "" : "  <-- LEVEL");
     return ok ? 0 : 1;
 }
@@ -158,10 +160,10 @@ int main()
     std::printf("------------------------------------------\n");
     int fails = 0;
 
-    /* Pot 2 centred is feed 0; hard right is the maximum the loop ever sees. */
-    for(float feed : {0.0f, 0.99f})
+    /* Pot 2 centred and hard right — the knob, not the loop coefficient. */
+    for(float knob : {0.0f, 0.99f})
         for(int taps : {1, 3, 5})
-            fails += MeasureDelay(taps, feed);
+            fails += MeasureDelay(taps, knob);
     std::printf("\n");
 
     for(const Row &row : rows)
@@ -182,7 +184,7 @@ int main()
         /* The same knob, scaled into the loop. Feedback is a knob now rather
          * than a stored setting, so the maximum is reachable at any moment and
          * is what has to hold. */
-        const float feed = 0.99f * fscale;
+        const float feed = FeedTaper(0.99f) * 0.99f * fscale;
 
         const size_t n = size_t(8.0f * SR);
         const size_t burst = size_t(0.02f * SR);
@@ -246,6 +248,59 @@ int main()
       }
       std::printf("\n");
     }
+    /* Does Pot 2 actually do anything as you turn it? RMS against continuous
+     * noise does not answer that -- a feedback control's job is the tail, and
+     * the Delay model measured a flat 55 ms across three quarters of the knob
+     * with the whole audible range crammed into the last few percent. It was
+     * working the entire time; there was just nowhere to find it. This row is
+     * here so that cannot come back silently. */
+    std::printf("Pot 2 taper on Delay: ring time across the knob\n");
+    {
+        float prev = 0.0f;
+        int flat = 0;
+        for(float knob : {0.15f, 0.30f, 0.45f, 0.60f, 0.75f, 0.90f, 1.00f})
+        {
+            static DelayBuffer<kMaxDelaySamples> line; line.Init();
+            FeedFilters ff; ff.Init(SR);
+            const float f0 = 220.0f;
+            ff.SetParams(0.2f, 0.25f, 0.7f, f0, f0);
+            const float d = SR / f0; line.SetDelay(d);
+            const float feed = FeedTaper(knob) * 0.99f;
+
+            const size_t n = size_t(6.0f * SR), burst = size_t(0.005f * SR);
+            const size_t w = size_t(0.05f * SR);
+            std::vector<float> out(n);
+            uint32_t rng = 0x1234567u;
+            for(size_t i = 0; i < n; ++i)
+            {
+                float in = 0.0f;
+                if(i < burst)
+                {
+                    rng = rng * 1664525u + 1013904223u;
+                    in = float(int32_t(rng)) * (1.0f / 2147483648.0f);
+                }
+                const float filt = ff.ProcessX(line.Read());
+                line.Write(LimitSample(SoftClipSample(in) + SoftClipSample(filt * feed)));
+                out[i] = LimitSample(ReadPrimeSpacedTaps(line, d, 1));
+            }
+            const float st = Rms(out, burst, w);
+            float t60 = -1.0f;
+            for(size_t i = burst; i + w < n; i += w)
+                if(Rms(out, i, w) < st * 0.001f) { t60 = float(i) / SR; break; }
+            std::printf("  knob %.2f  feed %.2f  ring %s", knob, feed,
+                        t60 < 0.0f ? ">6 s" : "");
+            if(t60 >= 0.0f) std::printf("%.3f s", t60);
+            /* Every step of the knob must lengthen the ring. Two consecutive
+             * steps that do not is a dead zone, which is the whole bug. */
+            if(t60 >= 0.0f && t60 <= prev + 1e-4f) { flat++; std::printf("   <-- flat"); }
+            else flat = 0;
+            std::printf("\n");
+            if(flat >= 2) { fails++; std::printf("  <-- dead zone in Pot 2's travel\n"); }
+            if(t60 >= 0.0f) prev = t60;
+        }
+    }
+    std::printf("\n");
+
     /* Pot 2 has to do something audible on every model, and Modal is the one
      * that cannot take a feedback loop at all -- it reads the knob as damping
      * instead. Anticlockwise must ring measurably shorter than clockwise, or
