@@ -4,6 +4,16 @@
 
 using namespace kxmx;
 
+namespace
+{
+/* Rounds away from zero. A cast truncates toward it, which reads a negative
+ * value a whole unit short — -0.50 rendered as -49. */
+int RoundHundredths(float v)
+{
+    return static_cast<int>(v * 100.0f + (v < 0.0f ? -0.5f : 0.5f));
+}
+} // namespace
+
 void RenderDisplay(Bluemchen &hw, const DisplayData &data)
 {
     hw.display.Fill(false);
@@ -61,16 +71,21 @@ void RenderDisplay(Bluemchen &hw, const DisplayData &data)
                 snprintf(buf, sizeof(buf), "%c%-4s %3d",
                          line.selected ? '*' : ' ',
                          line.label,
-                         static_cast<int>(line.value * 100.0f + 0.5f));
+                         RoundHundredths(line.value));
                 break;
             case MenuItemType::Ratio:
             {
-                const int ratioCents = static_cast<int>(line.value * 100.0f + 0.5f);
-                snprintf(buf, sizeof(buf), "%c%-4s %d.%02d",
+                /* Sign carried separately. Feedback runs -1.00 to +1.00, and
+                 * splitting a negative into integer and remainder parts gives
+                 * both of them a minus sign — "0.-50" for -0.5. */
+                const int cents = RoundHundredths(line.value);
+                const int mag = cents < 0 ? -cents : cents;
+                snprintf(buf, sizeof(buf), "%c%-4s %s%d.%02d",
                          line.selected ? '*' : ' ',
                          line.label,
-                         ratioCents / 100,
-                         ratioCents % 100);
+                         cents < 0 ? "-" : "",
+                         mag / 100,
+                         mag % 100);
                 break;
             }
             case MenuItemType::Int:

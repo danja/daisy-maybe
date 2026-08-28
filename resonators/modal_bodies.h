@@ -70,6 +70,13 @@ struct BodySpec
     float exciteTilt;
     /* Per-mode random-ish detune depth, for bodies with degenerate modes. */
     float detune;
+    /* How much of Pot 2's feedback this body can take. Measured at the worst
+     * case on every axis — Ring 1.0, which quadruples mode Q, and Taps 5 — then
+     * backed off by about a third for margin. See the headroom sweep in
+     * host_dsp/loop_fixture.cpp. These were all a flat zero when feedback was a
+     * stored setting that defaulted high; with a centre-off knob you have to
+     * ask for it, and the bodies turn out to take a lot more than that. */
+    float feedMax;
     /* Root frequency divisor at Size 8 — how much bigger the big body is. */
     float sizeSpan;
 };
@@ -87,11 +94,12 @@ enum class BodyType
 
 /*                          ratios            decaySec tilt excite detune sizeSpan */
 constexpr BodySpec kBodies[] = {
-    {bodies::kBeam,      3.0f, 0.55f, 0.70f, 0.000f, 6.0f},
-    {bodies::kMarimba,   0.45f, 1.30f, 1.60f, 0.000f, 4.0f},
-    {bodies::kDrumhead,  1.40f, 0.80f, 0.90f, 0.001f, 5.0f},
-    {bodies::kMembrane,  0.40f, 0.65f, 0.45f, 0.002f, 5.0f},
-    {bodies::kPlate,     7.0f, 0.30f, 0.30f, 0.004f, 8.0f},
+    /*             ratios          decaySec tilt  excite detune feedMax size */
+    {bodies::kBeam,      3.0f, 0.55f, 0.70f, 0.000f, 0.45f, 6.0f}, // safe to 0.70
+    {bodies::kMarimba,   0.45f, 1.30f, 1.60f, 0.000f, 0.30f, 4.0f}, // safe to 0.48
+    {bodies::kDrumhead,  1.40f, 0.80f, 0.90f, 0.001f, 0.28f, 5.0f}, // safe to 0.42
+    {bodies::kMembrane,  0.40f, 0.65f, 0.45f, 0.002f, 0.15f, 5.0f}, // safe to 0.24
+    {bodies::kPlate,     7.0f, 0.30f, 0.30f, 0.004f, 0.35f, 8.0f}, // safe to 0.54
 };
 
 static_assert(sizeof(kBodies) / sizeof(kBodies[0])
@@ -113,27 +121,36 @@ class ModalBodyVoice
     {
         for(int i = 0; i < kModes; ++i)
         {
-            y1_[i] = 0.0f;
-            y2_[i] = 0.0f;
+            bx_.y1[i] = 0.0f;
+            bx_.y2[i] = 0.0f;
+            by_.y1[i] = 0.0f;
+            by_.y2[i] = 0.0f;
         }
         controlCounter_ = 0;
         lastSpec_ = nullptr;
     }
 
-    /* freq: fundamental in Hz. size 1..8, taps 1..5, ratio 0.25..4 (partial
-     * stretch), decay 0..1. */
-    void SetParams(const BodySpec &spec, float freq, int size, int taps, float ratio,
-                   float decay)
+    /* freqX/freqY: the two channels' fundamentals in Hz — the same body struck
+     * at two pitches, so they are two instruments rather than two pickups on
+     * one. size 1..8, taps 1..5, ratio 0.25..4 (partial stretch), decay 0..1. */
+    void SetParams(const BodySpec &spec, float freqX, float freqY, int size, int taps,
+                   float ratio, float decay)
     {
         spec_ = &spec;
-        freq_ = freq;
+        freqX_ = freqX;
+        freqY_ = freqY;
         size_ = size;
         taps_ = taps;
         ratio_ = ratio;
         decay_ = decay;
     }
 
-    void Process(float in, float &outX, float &outY)
+    /* Two bodies, one per channel. They share coefficients — same spec, same
+     * pitch — but not state, so a signal on IN 2 cannot come out of OUT 1.
+     * Feeding one body from a mono sum of both inputs and taking two pickup
+     * positions off it was cheaper, but it made the two channels one voice.
+     * The pickup weights are kept, one per body, so the two still differ. */
+    void Process(float inX, float inY, float &outX, float &outY)
     {
         if(spec_ == nullptr)
         {
@@ -152,11 +169,15 @@ class ModalBodyVoice
         float sumY = 0.0f;
         for(int i = 0; i < kModes; ++i)
         {
-            const float y = a0_[i] * in + b1_[i] * y1_[i] + b2_[i] * y2_[i];
-            y2_[i] = y1_[i];
-            y1_[i] = y;
-            sumX += y * pickX_[i];
-            sumY += y * pickY_[i];
+            const float x = bx_.a0[i] * inX + bx_.b1[i] * bx_.y1[i] + bx_.b2[i] * bx_.y2[i];
+            bx_.y2[i] = bx_.y1[i];
+            bx_.y1[i] = x;
+            sumX += x * bx_.pick[i];
+
+            const float y = by_.a0[i] * inY + by_.b1[i] * by_.y1[i] + by_.b2[i] * by_.y2[i];
+            by_.y2[i] = by_.y1[i];
+            by_.y1[i] = y;
+            sumY += y * by_.pick[i];
         }
 
         outX = sumX;
@@ -169,6 +190,21 @@ class ModalBodyVoice
     static constexpr int kControlInterval = 64;
     static constexpr float kPi = 3.14159265358979323846f;
 
+    /* One complete body: its own coefficients, its own filter state, its own
+     * pickup. Two of these means IN 2 can never come out of OUT 1, and the two
+     * can be tuned apart with Ofst. Coefficients are rebuilt once per
+     * kControlInterval, so carrying two sets costs 24 transcendentals every
+     * 64 samples rather than 12 — still nothing measurable. */
+    struct Bank
+    {
+        float a0[kModes] = {0.0f};
+        float b1[kModes] = {0.0f};
+        float b2[kModes] = {0.0f};
+        float pick[kModes] = {0.0f};
+        float y1[kModes] = {0.0f};
+        float y2[kModes] = {0.0f};
+    };
+
     void UpdateCoefficients()
     {
         const BodySpec &spec = *spec_;
@@ -178,8 +214,10 @@ class ModalBodyVoice
         {
             for(int i = 0; i < kModes; ++i)
             {
-                y1_[i] = 0.0f;
-                y2_[i] = 0.0f;
+                bx_.y1[i] = 0.0f;
+                bx_.y2[i] = 0.0f;
+                by_.y1[i] = 0.0f;
+                by_.y2[i] = 0.0f;
             }
             lastSpec_ = spec_;
         }
@@ -194,9 +232,23 @@ class ModalBodyVoice
                          0.75f, 1.25f);
         /* A bigger body is lower and rings longer. */
         const float sizeDiv = 1.0f + sizeNorm * (spec.sizeSpan - 1.0f);
-        const float root = std::clamp(freq_ / sizeDiv, 20.0f, sampleRate_ * 0.45f);
         const float decayScale = (0.25f + std::clamp(decay_, 0.0f, 1.0f) * 3.75f)
                                  * (1.0f + sizeNorm * 1.5f);
+
+        /* Two pickup positions along the body, one per channel. Kept from when
+         * both were taken off a single body: the cosine comb is the standard
+         * modal pickup, and a node for one partial is an antinode for another,
+         * so the channels differ in timbre and not just in pitch. */
+        BuildBank(bx_, std::clamp(freqX_ / sizeDiv, 20.0f, sampleRate_ * 0.45f),
+                  stretch, decayScale, bright, 0.12f + bright * 0.18f);
+        BuildBank(by_, std::clamp(freqY_ / sizeDiv, 20.0f, sampleRate_ * 0.45f),
+                  stretch, decayScale, bright, 0.31f + bright * 0.22f);
+    }
+
+    void BuildBank(Bank &bank, float root, float stretch, float decayScale, float bright,
+                   float pickPos)
+    {
+        const BodySpec &spec = *spec_;
         const float nyquist = sampleRate_ * 0.48f;
 
         float gainSum = 0.0f;
@@ -213,11 +265,10 @@ class ModalBodyVoice
              * than folded down — real bodies just run out of audible modes. */
             if(freq >= nyquist || freq < 5.0f)
             {
-                a0_[i] = 0.0f;
-                b1_[i] = 0.0f;
-                b2_[i] = 0.0f;
-                pickX_[i] = 0.0f;
-                pickY_[i] = 0.0f;
+                bank.a0[i] = 0.0f;
+                bank.b1[i] = 0.0f;
+                bank.b2[i] = 0.0f;
+                bank.pick[i] = 0.0f;
                 continue;
             }
 
@@ -230,8 +281,8 @@ class ModalBodyVoice
             const float w = 2.0f * kPi * freq / sampleRate_;
             const float sinw = std::sin(w);
 
-            b1_[i] = 2.0f * r * std::cos(w);
-            b2_[i] = -r * r;
+            bank.b1[i] = 2.0f * r * std::cos(w);
+            bank.b2[i] = -r * r;
             /* sin(w) normalises the *impulse* response to unity peak, which is
              * the right choice for a struck body: a strike then sounds the same
              * whether the mode rings for 0.4 s or 28 s. Normalising the
@@ -242,20 +293,13 @@ class ModalBodyVoice
              * sitting on a mode sees gain Q/w, which is enormous. That is why
              * the body models are excited open-loop (see feedScale in main.cpp)
              * and their output is soft-clipped. */
-            a0_[i] = sinw;
+            bank.a0[i] = sinw;
 
             /* Brightness lifts the upper partials by flattening the strike
              * tilt — a hard mallet against a soft one. */
             const float tilt = spec.exciteTilt * (1.0f - bright * 0.75f);
             const float amp = std::pow(n, -tilt);
-            /* Two pickup positions along the body. The cosine comb is the
-             * standard modal pickup: a node for one partial is an antinode for
-             * another, which is what makes the two outputs differ in timbre
-             * rather than just in level. */
-            const float posX = 0.12f + bright * 0.18f;
-            const float posY = 0.31f + bright * 0.22f;
-            pickX_[i] = amp * std::sin(kPi * n * posX);
-            pickY_[i] = amp * std::sin(kPi * n * posY);
+            bank.pick[i] = amp * std::sin(kPi * n * pickPos);
             gainSum += amp;
         }
 
@@ -266,8 +310,7 @@ class ModalBodyVoice
         const float norm = (gainSum > 0.0f) ? (0.30f / gainSum) : 0.0f;
         for(int i = 0; i < kModes; ++i)
         {
-            pickX_[i] *= norm;
-            pickY_[i] *= norm;
+            bank.pick[i] *= norm;
         }
     }
 
@@ -275,19 +318,15 @@ class ModalBodyVoice
     const BodySpec *spec_ = nullptr;
     const BodySpec *lastSpec_ = nullptr;
 
-    float freq_ = 440.0f;
+    float freqX_ = 440.0f;
+    float freqY_ = 440.0f;
     int size_ = 1;
     int taps_ = 1;
     float ratio_ = 1.0f;
     float decay_ = 0.5f;
 
-    float a0_[kModes] = {0.0f};
-    float b1_[kModes] = {0.0f};
-    float b2_[kModes] = {0.0f};
-    float y1_[kModes] = {0.0f};
-    float y2_[kModes] = {0.0f};
-    float pickX_[kModes] = {0.0f};
-    float pickY_[kModes] = {0.0f};
+    Bank bx_;
+    Bank by_;
     int controlCounter_ = 0;
 };
 

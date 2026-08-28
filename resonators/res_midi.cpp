@@ -11,7 +11,6 @@ namespace res
 void ResMidi::Init(kxmx::Bluemchen &hw)
 {
     hw.midi.StartReceive();
-    startMs_ = daisy::System::GetNow();
 }
 
 void ResMidi::ApplyPitch(uint8_t note)
@@ -74,21 +73,37 @@ bool ResMidi::TakeStrike(Strike &out)
 
 void ResMidi::Process(kxmx::Bluemchen &hw, const MidiSettings &cfg)
 {
-    hw.midi.Listen();
+    /* First pass only: throw away everything the UART accumulated during init.
+     *
+     * StartReceive runs before the SD card is mounted and scanned, and nothing
+     * drains the queue until the main loop starts — so the opto's power-up
+     * settling gets framed into a backlog of bogus events that all arrive in
+     * the first Process() call. That backlog is what the Diag counter was
+     * reporting: it read a fixed number, then never moved again, which looked
+     * like a stuck peripheral rather than a stale queue.
+     *
+     * A wall-clock settle window could not fix it — if init ran past the
+     * window, the whole backlog was already counted by the time it closed.
+     * Flushing on the first pass is exact regardless of how long init takes.
+     *
+     * Only the queue is emptied. Calling StartReceive again to "re-arm" looks
+     * tempting and is worse than doing nothing: HAL_UART_Receive_DMA returns
+     * BUSY while reception is already running, so the DMA keeps its real
+     * position while DmaListenStart has already reset the read cursor to zero
+     * — and the next IDLE interrupt replays the stale buffer as fresh bytes. */
+    if(!flushed_)
+    {
+        while(hw.midi.HasEvents())
+            hw.midi.PopEvent();
+        flushed_ = true;
+        return;
+    }
 
-    /* 300 ms was not enough: the input still produced a burst of bogus events
-     * after it. The MIDI opto's output settles to idle-high over some time
-     * after power-up, and until it does the UART frames noise. Everything
-     * before the cutoff is popped and discarded, so the counter starts at a
-     * genuine zero and any increment afterwards is real traffic. */
-    if(!settled_ && (daisy::System::GetNow() - startMs_) > 1500)
-        settled_ = true;
+    hw.midi.Listen();
 
     while(hw.midi.HasEvents())
     {
         daisy::MidiEvent e = hw.midi.PopEvent();
-        if(!settled_)
-            continue; // boot garbage; see startMs_
         messages_++;
 
         const bool channelMsg

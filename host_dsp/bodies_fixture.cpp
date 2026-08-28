@@ -74,7 +74,9 @@ Result Run(int bodyIndex, float freq, int size, int taps, float ratio, float dec
 {
     res::ModalBodyVoice voice;
     voice.Init(kSampleRate);
-    voice.SetParams(res::kBodies[bodyIndex], freq, size, taps, ratio, decay);
+    /* Both channels on the same pitch: this fixture measures one body's
+     * response, and Ofst separating them is the loop fixture's business. */
+    voice.SetParams(res::kBodies[bodyIndex], freq, freq, size, taps, ratio, decay);
 
     const size_t n = size_t(seconds * kSampleRate);
     const size_t burst = size_t(0.001f * kSampleRate);
@@ -96,7 +98,7 @@ Result Run(int bodyIndex, float freq, int size, int taps, float ratio, float dec
             in = float(int32_t(rng)) * (1.0f / 2147483648.0f);
         }
         float l = 0.0f, r = 0.0f;
-        voice.Process(in, l, r);
+        voice.Process(in, in, l, r);
 
         if(!std::isfinite(l) || !std::isfinite(r))
             out.finite = false;

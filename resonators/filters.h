@@ -71,3 +71,23 @@ inline float SoftClipSample(float x)
     const float absx = fabsf(x);
     return x / (1.0f + absx);
 }
+
+/* Bounds a signal without touching it while it is already in range.
+ *
+ * SoftClipSample saturates from zero upwards — it halves a full-scale sample —
+ * which is right for the single saturating stage inside a feedback loop but
+ * costs 6 dB every further time it is applied to a signal that was already
+ * bounded. The Delay model paid that twice (input clip, then loop-write clip)
+ * and came out 0.33x the input at one tap; see host_dsp/loop_fixture.cpp.
+ *
+ * Unity below full scale, C1-continuous at |x| = 1, asymptotic to 2. */
+inline float LimitSample(float x)
+{
+    const float absx = fabsf(x);
+    if (absx <= 1.0f)
+    {
+        return x;
+    }
+    const float limited = 2.0f - 1.0f / absx;
+    return (x < 0.0f) ? -limited : limited;
+}

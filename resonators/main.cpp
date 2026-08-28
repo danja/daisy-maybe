@@ -48,19 +48,16 @@ namespace
         }
     };
 
-    struct WiringParams
-    {
-        float feedXX = 0.8f;
-        float feedYY = 0.8f;
-        float feedXY = 0.0f;
-        float feedYX = 0.0f;
-    };
-
     struct DistortionParams
     {
         int folds = 3;
-        float foldMix = 1.0f;
+        /* Off by default. The wavefolder is a colour, not the module's voice,
+         * and it used to be fully wet the moment you powered up. */
+        float foldMix = 0.0f;
         float driveMix = 0.0f;
+        /* How hard the folder and overdrive are driven. This used to be Pot 2;
+         * Pot 2 is the feedback control now, so it lives on the menu. */
+        float depth = 0.5f;
     };
 
     struct ResonatorParams
@@ -70,6 +67,10 @@ namespace
         float mix = 1.0f;
         int size = 1;
         int taps = 1;
+        /* Pitch of the second delay/channel relative to the first. Separate
+         * from `ratio`, which the models read as a timbre control (chord
+         * spread, mode stretch, FM ratio) — one knob could not be both. */
+        float offset = 1.0f;
         /* Ring time of the struck bodies. Ignored by Delay/ModalBank/
          * SympString/FMRes, which set their decay from Size and feedback. */
         float decay = 0.5f;
@@ -135,24 +136,6 @@ namespace
     {
         return std::clamp(params.taps, 1, 5);
     }
-
-    float ReadPrimeSpacedTaps(const DelayBuffer<kMaxDelaySamples> &delay, float baseDelay, int tapCount)
-    {
-        constexpr float tapRatios[] = {1.0f, 0.733f, 0.569f, 0.421f, 0.317f};
-        constexpr float tapGains[] = {1.0f, 0.82f, 0.68f, 0.56f, 0.46f};
-
-        const int count = std::clamp(tapCount, 1, static_cast<int>(sizeof(tapRatios) / sizeof(tapRatios[0])));
-        float sum = 0.0f;
-        float gainSum = 0.0f;
-        for (int tap = 0; tap < count; ++tap)
-        {
-            const float gain = tapGains[tap];
-            sum += delay.ReadAt(baseDelay * tapRatios[tap]) * gain;
-            gainSum += gain;
-        }
-
-        return gainSum > 0.0f ? sum / gainSum : 0.0f;
-    }
 } // namespace
 
 namespace
@@ -179,12 +162,18 @@ res::SampleVoices sampleVoices;
 res::ResMidi midi;
 res::MidiSettings midiSettings;
 
-WiringParams wiringParams;
 DistortionParams distortionParams;
 ResonatorParams resonatorParams;
 FilterParams filterParams;
 SampleParams sampleParams;
 MalletParams malletParams;
+
+/* Regeneration around the resonator, from Pot 2 summed with CV 2. Bipolar:
+ * centred is none, clockwise regenerates in phase, anticlockwise inverts —
+ * which on a delay moves the comb's peaks onto the odd harmonics instead of
+ * the even ones, a different tone rather than just less of the same one.
+ * There is no cross-channel term at all: X feeds only X, Y only Y. */
+float feedAmount = 0.0f;
 
 /* ── Diagnostics ──────────────────────────────────────────────────────────
  * Written by the audio callback, read by the Diag menu page. Each is a
@@ -207,6 +196,26 @@ int diagMidiRx = 0;
 /* Last note number received. The decisive test: play middle C and this reads
  * 60 if bytes are arriving at all. */
 int diagMidiNote = 0;
+/* Raw Pot 2 and CV 2, before they are combined into feedAmount. Together with
+ * `Feed` these separate "the knob is not moving" from "the knob moves but the
+ * model ignores it": an unpatched CV 2 must sit near 50, and P2 must sweep
+ * 0..100. If both look right and Feed still reads 0, the model's feed scale is
+ * zero — see ModelFeedScale. */
+float diagPot2 = 0.0f;
+float diagCv2 = 0.0f;
+/* Straight off the ADC, below AnalogControl entirely. This is what separates a
+ * dead channel from a live one being mis-scaled: if R2/R4 move while P2/C2 do
+ * not, the fault is in the control config; if none of them move, nothing is
+ * reaching the ADC and it is the pot, the jack or the wiring. Pot 1 and CV 1
+ * are shown alongside as the known-good reference — they demonstrably work, so
+ * anything true of them and not of 2 is the difference that matters. */
+float diagRawP1 = 0.0f;
+float diagRawP2 = 0.0f;
+float diagRawC1 = 0.0f;
+float diagRawC2 = 0.0f;
+/* Measured resting point of CV 2, from the boot sample below. Shown on Diag so
+ * the auto-zero is visible rather than magic. */
+float diagCv2Zero = 0.5f;
 
 CpuLoadMeter cpuMeter;
 
@@ -279,17 +288,11 @@ const char *SampleStatus(int)
     return sampleStore.Status();
 }
 
-MenuItem wiringItems[] = {
-    {"X-X", MenuItemType::Percent, &wiringParams.feedXX, nullptr, 0.0f, kMaxFeed, 0.02f},
-    {"Y-Y", MenuItemType::Percent, &wiringParams.feedYY, nullptr, 0.0f, kMaxFeed, 0.02f},
-    {"X-Y", MenuItemType::Percent, &wiringParams.feedXY, nullptr, 0.0f, kMaxFeed, 0.02f},
-    {"Y-X", MenuItemType::Percent, &wiringParams.feedYX, nullptr, 0.0f, kMaxFeed, 0.02f},
-};
-
 MenuItem resonatorItems[] = {
     {"Mode", MenuItemType::Enum, nullptr, &resonatorParams.model, 0.0f,
      static_cast<float>(kNumResonatorModels - 1), 1.0f, ModelName, nullptr},
     {"Ratio", MenuItemType::Ratio, &resonatorParams.ratio, nullptr, 0.25f, 4.0f, 0.05f},
+    {"Ofst", MenuItemType::Ratio, &resonatorParams.offset, nullptr, 0.25f, 4.0f, 0.05f},
     {"Mix", MenuItemType::Percent, &resonatorParams.mix, nullptr, 0.0f, 1.0f, 0.02f},
     {"Size", MenuItemType::Int, nullptr, &resonatorParams.size, 1.0f, 8.0f, 1.0f},
     {"Taps", MenuItemType::Int, nullptr, &resonatorParams.taps, 1.0f, 5.0f, 1.0f},
@@ -299,6 +302,7 @@ MenuItem resonatorItems[] = {
 MenuItem distortionItems[] = {
     {"Fold", MenuItemType::Percent, &distortionParams.foldMix, nullptr, 0.0f, 1.0f, 0.02f},
     {"Drive", MenuItemType::Percent, &distortionParams.driveMix, nullptr, 0.0f, 1.0f, 0.02f},
+    {"Dpth", MenuItemType::Percent, &distortionParams.depth, nullptr, 0.0f, 1.0f, 0.02f},
     {"NFold", MenuItemType::Int, nullptr, &distortionParams.folds, 1.0f, 5.0f, 1.0f},
 };
 
@@ -332,6 +336,16 @@ MenuItem midiItems[] = {
 /* Read-only in practice: the audio callback overwrites these every block, so
  * a stray encoder turn is corrected within a millisecond. */
 MenuItem diagItems[] = {
+    /* Where Pot 2 and CV 2 have actually landed, signed. The knob has no
+     * detent, so this is the only way to find true centre. */
+    {"Feed", MenuItemType::Percent, &feedAmount, nullptr, -1.0f, 1.0f, 0.0f},
+    {"P2", MenuItemType::Percent, &diagPot2, nullptr, 0.0f, 1.0f, 0.0f},
+    {"C2", MenuItemType::Percent, &diagCv2, nullptr, 0.0f, 1.0f, 0.0f},
+    {"rP1", MenuItemType::Percent, &diagRawP1, nullptr, 0.0f, 1.0f, 0.0f},
+    {"rP2", MenuItemType::Percent, &diagRawP2, nullptr, 0.0f, 1.0f, 0.0f},
+    {"rC1", MenuItemType::Percent, &diagRawC1, nullptr, 0.0f, 1.0f, 0.0f},
+    {"rC2", MenuItemType::Percent, &diagRawC2, nullptr, 0.0f, 1.0f, 0.0f},
+    {"zC2", MenuItemType::Percent, &diagCv2Zero, nullptr, 0.0f, 1.0f, 0.0f},
     {"CPU", MenuItemType::Percent, &diagCpu, nullptr, 0.0f, 1.0f, 0.0f},
     {"In", MenuItemType::Percent, &diagIn, nullptr, 0.0f, 1.0f, 0.0f},
     {"Out", MenuItemType::Percent, &diagOut, nullptr, 0.0f, 1.0f, 0.0f},
@@ -342,7 +356,6 @@ MenuItem diagItems[] = {
 };
 
 MenuPage menuPages[] = {
-    {"Wiring", wiringItems, sizeof(wiringItems) / sizeof(wiringItems[0])},
     {"Resonate", resonatorItems, sizeof(resonatorItems) / sizeof(resonatorItems[0])},
     {"Distort", distortionItems, sizeof(distortionItems) / sizeof(distortionItems[0])},
     {"Filter", filterItems, sizeof(filterItems) / sizeof(filterItems[0])},
@@ -357,7 +370,6 @@ float currentFreq = 440.0f;
 float currentFreq2 = 440.0f;
 float pitchScale = 1.0f;
 float pitchOffset = 0.0f;
-float waveDepth = 0.0f;
 
 bool calibMode = false;
 uint32_t lastCalibChangeMs = 0;
@@ -412,6 +424,9 @@ Mallet mallet;
 volatile int pendingInputStrikes = 0;
 bool inputArmed = true;
 uint32_t inputLockout = 0;
+
+/* Where CV 2 sits with nothing patched, sampled once at boot. */
+float cv2Zero = 0.5f;
 
 float calibPhase = 0.0f;
 float sampleRate = 48000.0f;
@@ -480,16 +495,33 @@ void UpdateControls()
          * feedback path. */
         const float freq = root * pitchMultiplier;
         currentFreq = std::isfinite(freq) ? std::clamp(freq, kMinFreq, kMaxFreq) : kCalibTone;
-        const float freq2 = currentFreq * resonatorParams.ratio;
+        /* Offset, not Ratio: Ratio is the models' timbre control and moving the
+         * second channel's pitch with it made every mode change detune the
+         * pair. 1.00 is unison. */
+        const float freq2 = currentFreq * resonatorParams.offset;
         currentFreq2
             = std::isfinite(freq2) ? std::clamp(freq2, kMinFreq, kMaxFreq) : currentFreq;
-        /* CV 2 is bipolar like CV 1 (kxmx_bluemchen's own hardware_test inits
-         * both as -5V..+5V), so an unpatched jack reads 0.5. Summed raw it
-         * added a constant +0.5 and pinned waveDepth at the 1.0 clamp for any
-         * knob past halfway — which is Pot 2 appearing to do nothing. */
-        waveDepth = std::clamp(pot2 + (cv2 - 0.5f) * 2.0f, 0.0f, 1.0f);
+        /* Both are bipolar (kxmx_bluemchen's own hardware_test inits CV 1 and
+         * CV 2 as -5V..+5V), so an unpatched jack and a centred knob both read
+         * 0.5 and contribute nothing. Knob and CV sum, so CV can drive the full
+         * range from either end of the knob's travel. */
+        /* CV 2 is measured against its own resting point, not an assumed 0.5.
+         * An unpatched input that does not sit where you expect saturates this
+         * sum and takes the knob with it: the knob's whole travel then lands
+         * outside the clamp and Pot 2 looks dead. That is the same failure the
+         * wavefolder depth had under a completely different formula, which is
+         * what makes the input worth measuring rather than assuming. */
+        const float cv2Bipolar = (cv2 - cv2Zero) * 2.0f;
+        feedAmount
+            = std::clamp((pot2 - 0.5f) * 2.0f + cv2Bipolar, -1.0f, 1.0f);
     }
 
+    diagPot2 = pot2;
+    diagCv2 = cv2;
+    diagRawP1 = hw.controls[Bluemchen::CTRL_1].GetRawFloat();
+    diagRawP2 = hw.controls[Bluemchen::CTRL_2].GetRawFloat();
+    diagRawC1 = hw.controls[Bluemchen::CTRL_3].GetRawFloat();
+    diagRawC2 = hw.controls[Bluemchen::CTRL_4].GetRawFloat();
     diagFreq = std::isfinite(currentFreq) ? static_cast<int>(currentFreq) : 0;
     diagMidi = static_cast<int>(midi.MessageCount() & 0x7fff);
     diagMidiRx = midi.RxActive(hw) ? 1 : 0;
@@ -656,6 +688,7 @@ void AudioCallback(AudioHandle::InputBuffer in,
 
     const float foldMix = distortionParams.foldMix;
     const float driveMix = distortionParams.driveMix;
+    const float waveDepth = std::clamp(distortionParams.depth, 0.0f, 1.0f);
     const float resMix = resonatorParams.mix;
     const float dryMix = 1.0f - resMix;
     const ResonatorModel model = static_cast<ResonatorModel>(
@@ -670,10 +703,10 @@ void AudioCallback(AudioHandle::InputBuffer in,
      * model outputs are already soft-clipped, and clipping a bounded signal a
      * second time is pure attenuation. */
     const bool needsMakeup = outGain != 1.0f;
-    const float feedXX = wiringParams.feedXX * feedScale;
-    const float feedYY = wiringParams.feedYY * feedScale;
-    const float feedXY = wiringParams.feedXY * feedScale;
-    const float feedYX = wiringParams.feedYX * feedScale;
+    /* One feed term per channel, straight through. There is deliberately no
+     * X-Y or Y-X path: cross-feed made the two outputs collapse into each
+     * other, and the two channels are meant to be independent voices. */
+    const float feed = feedAmount * kMaxFeed * feedScale;
 
     /* Excitation is summed into both inputs ahead of the wavefolder, so the
      * distortion stage shapes a struck sample exactly as it shapes live audio. */
@@ -749,9 +782,12 @@ void AudioCallback(AudioHandle::InputBuffer in,
         const float filteredX = feedFilters.ProcessX(resX);
         const float filteredY = feedFilters.ProcessY(resY);
 
-        // Feed routing happens before the distortion stage.
-        const float preDistX = inX + filteredX * feedXX + filteredY * feedYX;
-        const float preDistY = inY + filteredY * feedYY + filteredX * feedXY;
+        /* Feed routing happens before the distortion stage. The feedback term
+         * is saturated on its own rather than the sum: that bounds the loop
+         * without costing the dry input 6 dB on the way past, which is what
+         * left Delay a third of everything else's level. */
+        const float preDistX = inX + SoftClipSample(filteredX * feed);
+        const float preDistY = inY + SoftClipSample(filteredY * feed);
 
         const float foldX = ApplyWavefolder(preDistX, waveDepth, folds);
         const float foldY = ApplyWavefolder(preDistY, waveDepth, folds);
@@ -773,12 +809,14 @@ void AudioCallback(AudioHandle::InputBuffer in,
 
         if (model == ResonatorModel::Delay)
         {
-            // Blend folded and overdriven signals before the resonators.
-            delays.Write1(SoftClipSample(makeupX));
-            delays.Write2(SoftClipSample(makeupY));
+            /* LimitSample, not SoftClipSample: the line's contents are already
+             * in range (inX is clipped and the feedback term is saturated
+             * above), so a second saturator here only attenuated. */
+            delays.Write1(LimitSample(makeupX));
+            delays.Write2(LimitSample(makeupY));
 
-            out[0][i] = dryMix * inX + resMix * tapOutX;
-            out[1][i] = dryMix * inY + resMix * tapOutY;
+            out[0][i] = dryMix * inX + resMix * LimitSample(tapOutX);
+            out[1][i] = dryMix * inY + resMix * LimitSample(tapOutY);
         }
         else
         {
@@ -789,6 +827,7 @@ void AudioCallback(AudioHandle::InputBuffer in,
             params.size = resonatorParams.size;
             params.taps = tapCount;
             params.decay = resonatorParams.decay;
+            params.feed = feedAmount;
 
             float modelOutX = 0.0f;
             float modelOutY = 0.0f;
@@ -847,7 +886,6 @@ int main(void)
     distortionY.Reset();
 
     MenuInit(menuState);
-    midi.Init(hw);
 
     /* The card is optional: with no card the module is exactly what it was,
      * excited by its audio inputs and the internal mallet. */
@@ -873,12 +911,42 @@ int main(void)
     pitchScale = savedCalib.scale;
     pitchOffset = savedCalib.offset;
 
+    /* Sample CV 2's resting point. Only trust it if it holds still: a patched
+     * LFO would otherwise have whatever it happened to be doing at boot become
+     * "zero". If it moves, fall back to mid-scale, which is the correct answer
+     * for a healthy bipolar input anyway. */
+    {
+        float lo = 1.0f;
+        float hi = 0.0f;
+        float sum = 0.0f;
+        constexpr int kSamples = 64;
+        for (int i = 0; i < kSamples; ++i)
+        {
+            hw.ProcessAnalogControls();
+            const float v = hw.GetKnobValue(Bluemchen::CTRL_4);
+            lo = std::min(lo, v);
+            hi = std::max(hi, v);
+            sum += v;
+            System::Delay(2);
+        }
+        const float mean = sum / static_cast<float>(kSamples);
+        cv2Zero = ((hi - lo) < 0.02f && std::isfinite(mean)) ? mean : 0.5f;
+        diagCv2Zero = cv2Zero;
+    }
+
     hw.display.Fill(false);
     hw.display.SetCursor(0, 0);
     hw.display.WriteString("Resonators", Font_6x8, true);
     hw.display.SetCursor(0, 12);
     hw.display.WriteString("Booting...", Font_6x8, true);
     hw.display.Update();
+
+    /* Last, so the UART spends as little time as possible receiving with
+     * nothing draining it. Mounting and scanning the card is the slow part of
+     * init, and starting reception before it meant the parser had already
+     * turned the opto's settling into a queue full of bogus events by the time
+     * the main loop came up. ResMidi::Process flushes whatever still gets in. */
+    midi.Init(hw);
 
     hw.StartAudio(AudioCallback);
 

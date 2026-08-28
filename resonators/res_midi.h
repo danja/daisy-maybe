@@ -88,11 +88,10 @@ class ResMidi
     int lastNote_ = 0; // 0 until a real note arrives, so Diag starts clean
 
     uint32_t messages_ = 0;
-    /* The DMA buffer holds junk before the first real byte, and parsing it
-     * yields a burst of bogus events — a note among them would yank the pitch.
-     * Events are dropped until the UART has been up briefly. */
-    uint32_t startMs_ = 0;
-    bool settled_ = false;
+    /* False until the first Process() call has emptied the boot backlog and
+     * re-armed reception. Until then the queue holds whatever the opto framed
+     * while it was settling, none of which is real traffic. */
+    bool flushed_ = false;
 
     uint8_t held_[kMaxHeld] = {0};
     int heldCount_ = 0;

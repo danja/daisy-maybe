@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 
 constexpr size_t kMaxDelaySamples = 48000;
@@ -65,6 +66,37 @@ private:
     size_t write_ptr_ = 0;
     float delay_ = 1.0f;
 };
+
+/* Multi-tap read at incommensurate fractions of the base delay, normalised by
+ * the tap gains so the count does not change the level. Lives here rather than
+ * in main.cpp so host_dsp/loop_fixture.cpp measures the same reader the
+ * firmware runs — the Delay makeup gain is derived from it. */
+inline float ReadPrimeSpacedTaps(const DelayBuffer<kMaxDelaySamples> &delay,
+                                 float baseDelay,
+                                 int tapCount)
+{
+    constexpr float tapRatios[] = {1.0f, 0.733f, 0.569f, 0.421f, 0.317f};
+    constexpr float tapGains[] = {1.0f, 0.82f, 0.68f, 0.56f, 0.46f};
+
+    const int count = std::clamp(
+        tapCount, 1, static_cast<int>(sizeof(tapRatios) / sizeof(tapRatios[0])));
+    float sum = 0.0f;
+    float gainSq = 0.0f;
+    for (int tap = 0; tap < count; ++tap)
+    {
+        const float gain = tapGains[tap];
+        sum += delay.ReadAt(baseDelay * tapRatios[tap]) * gain;
+        gainSq += gain * gain;
+    }
+
+    /* Power normalisation, not amplitude. The taps sit at incommensurate
+     * fractions of the delay so what they return is uncorrelated; dividing by
+     * the sum of gains treats it as if it were coherent and buries the level —
+     * five taps measured 0.08x the input that way. Dividing by the root of the
+     * summed squares is the right normaliser for uncorrelated sources and
+     * holds the level roughly constant as Taps changes. */
+    return gainSq > 0.0f ? sum / std::sqrt(gainSq) : 0.0f;
+}
 
 struct DelayLinePair
 {

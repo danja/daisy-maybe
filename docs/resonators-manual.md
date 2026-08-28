@@ -41,6 +41,8 @@ After that `make program-dfu` writes the firmware to QSPI exactly as before.
 | Modal, Strng, FM | Working on hardware — retuned so they ring and decay rather than drone |
 | Pitch, CV 1/CV 2, wavefolder | Working on hardware |
 | SD sample excitation | Loads and plays; filename limit applies (see [Sample Excitation](#sample-excitation)) |
+| Feedback on Knob 2/CV 2 | Active on **every** model; `Modal` maps it to damping |
+| Channel separation | Two independent instruments; only `Ratio` and the other menu settings are shared |
 | **MIDI** | **Unverified — pending input-path checks. See [MIDI](#midi)** |
 
 ## Front Panel Layout
@@ -55,7 +57,7 @@ After that `make program-dfu` writes the firmware to QSPI exactly as before.
 │                                 │
 │     ○ POT 1 (Pitch)             │
 │                                 │
-│     ○ POT 2 (Fold)              │
+│     ○ POT 2 (Feedback)          │
 │                                 │
 │     ┌───┐  Encoder               │
 │     │ ⟲ │  (Menu)               │
@@ -74,7 +76,8 @@ After that `make program-dfu` writes the firmware to QSPI exactly as before.
 1. **Patch audio** to IN 1 and/or IN 2.
 2. **Turn Knob 1** to set the base resonant pitch.
 3. **Patch CV 1** for 1V/oct pitch control (±5 octaves).
-4. **Turn Knob 2 / CV 2** to set wavefolder depth.
+4. **Turn Knob 2 / CV 2** to set feedback. It is centre-off: straight up is
+   none, clockwise regenerates, anticlockwise regenerates inverted.
 5. **Rotate the encoder** to adjust the current menu item.
 6. **Short press the encoder** to cycle through menu pages.
 7. **Optionally** load a WAV from the card on the **Sample** page and play the module from MIDI — see [Sample Excitation](#sample-excitation) and [MIDI](#midi).
@@ -88,8 +91,8 @@ After that `make program-dfu` writes the firmware to QSPI exactly as before.
 | IN 1 | Excitation, and trigger | — | Fires the sample on a rising edge when `Trig` is `In` or `Both` |
 | MIDI note | Pitch and strike | — | See the MIDI page; `Ptch` chooses add vs. replace |
 | MIDI velocity | Strike level | 0.0 - 1.0 | Scaled by `Velo` |
-| Knob 2 | Wavefolder depth | 0.0 - 1.0 | Base fold depth |
-| CV 2 | Wavefolder depth mod | ±1.0 | **Bipolar**: 0 V is mid-scale and adds nothing. Sums with Knob 2 |
+| Knob 2 | Feedback | -100% to +100% | **Centre-off**: straight up is none, clockwise in phase, anticlockwise inverted |
+| CV 2 | Feedback mod | ±100% | **Bipolar**: 0 V is mid-scale and adds nothing. Sums with Knob 2 |
 | Encoder rotate | Menu value | Depends on item | See menu below |
 | Encoder short press | Item select | Title → item list | Scrolls within a page |
 | Encoder long press | Toggle CAL | CAL ↔ menu | CAL enters calibration tone |
@@ -98,21 +101,18 @@ After that `make program-dfu` writes the firmware to QSPI exactly as before.
 
 The top line shows the current page title. When the title line is selected, rotating the encoder switches pages.
 
-- **Wiring**
-  - `X-X`: Resonator X to X feed via filter.
-  - `Y-Y`: Resonator Y to Y feed via filter.
-  - `X-Y`: Resonator X to Y feed via filter.
-  - `Y-X`: Resonator Y to X feed via filter.
 - **Resonate**
   - `Mode`: Resonator model, shown by name: `Delay`, `Modal`, `Strng`, `FM`, `Beam`, `Marim`, `Drumh`, `Membr`, `Plate`.
-  - `Ratio`: Resonator Y ratio vs X delay time (0.25-4.0). On the struck bodies this stretches or compresses the partial series instead.
+  - `Ratio`: Timbre control, read differently by each model (0.25-4.0) — chord spread on `Strng`, modal stretch on `Modal`, FM ratio on `FM`. On the struck bodies it stretches or compresses the partial series. It no longer moves the second channel's pitch; that is `Ofst`.
+  - `Ofst`: Pitch of the second resonator relative to the first (0.25-4.0, default `1.00` = unison). `0.50` is an octave down, `2.00` an octave up.
   - `Mix`: Resonator wet/dry mix at the output.
   - `Size`: Effective delay clock divisor (1-8). Higher values lengthen the delay lines and lower the resonant pitch for a larger-body response.
   - `Taps`: Number of output taps (1-5). Higher values add shorter prime-spaced taps for a reverb-like spread. On `Modal` and `Strng` it sets ring time instead (roughly 0.3 s to 0.9 s); on the struck bodies, strike brightness and pickup position.
   - `Ring`: Decay time of the struck bodies. Ignored by Delay, Modal, Strng and FM — on those, ring time comes from `Taps` and the feed amount.
 - **Distort**
-  - `Fold`: Fold mix (dry ↔ folded).
-  - `Drive`: Overdrive mix (dry ↔ driven).
+  - `Fold`: Fold mix (dry ↔ folded). **Defaults to 0%** — the wavefolder is a colour, not the module's voice.
+  - `Drive`: Overdrive mix (dry ↔ driven). Defaults to 0%.
+  - `Dpth`: How hard the folder and overdrive are driven. This was Knob 2 before Knob 2 became the feedback control. With `Fold` and `Drive` both at 0% it does nothing.
   - `NFold`: Number of wavefolds (1-5).
 - **Filter**
   - `Level`: Filter mix (dry ↔ filtered) on the feed paths.
@@ -129,6 +129,9 @@ The top line shows the current page title. When the title line is selected, rota
   - `Velo`: How much velocity scales the strike. At `0` every note strikes at full level, for controllers with no velocity sensor.
   - `Malt`: Level of the internal mallet — a 3 ms noise burst fired on every note-on, so a note sounds with nothing patched and no card in the slot.
 - **Diag** — read-only meters, written by the audio callback. Nothing here changes the sound; it exists to tell you *where* a problem is rather than that there is one.
+  - `Feed`: Where Knob 2 and CV 2 have actually landed, signed, as a percentage. The knob has no detent, so this is the only way to find true centre.
+  - `P2`: Knob 2 alone, 0-100. Should sweep the full range as you turn it.
+  - `C2`: CV 2 alone, 0-100. An unpatched jack should sit near `50`. If it does not, `Feed` is being pushed off centre by the CV input and Knob 2 will appear to do less than it should — that is the first thing to check if the knob feels dead.
   - `CPU`: Average audio-callback load, as a percentage.
   - `In`: Peak at IN 1/IN 2, measured at the jack before any processing.
   - `Out`: Peak at OUT 1/OUT 2, after the mix.
@@ -154,37 +157,49 @@ CAL and normal playback now read CV 1 on the same bipolar scale. They used to di
 
 ### Feedback models
 
-- **Delay**: original dual tuned delay-line resonators. `Ratio` tunes Y relative to X, `Size` changes effective delay clock, and `Taps` controls prime-spaced output taps.
+- **Delay**: original dual tuned delay-line resonators. `Ofst` tunes the second relative to the first, `Size` changes effective delay clock, and `Taps` controls prime-spaced output taps.
 - **Modal** (ModalBank): modal resonator bank. `Ratio` bends modal spacing from compressed to stretched, `Size` lowers the body and darkens upper modes, and `Taps` sets ring time (~0.3–0.8 s).
 - **Strng** (SympString): sympathetic string bank. `Ratio` morphs chord/spread relationships, `Size` changes string body size, and `Taps` sets brightness and ring time (~0.3–0.9 s).
 - **FM** (FMRes): FM resonator voice. `Ratio` controls FM ratio, `Size` controls damping/envelope behaviour, and `Taps` controls brightness/FM index. Rings ~0.6 s.
 
-These four sit inside the feed matrix, but **not all of them take the same amount of it**. A plain delay line has no regeneration of its own, so the matrix *is* its resonance and it wants the full amount. The others already ring internally, and the same feed that makes `Delay` sing makes them lock into a continuous tone. Each is therefore scaled:
+These four sit inside the feedback loop, but **not all of them take the same amount of it**. A plain delay line has no regeneration of its own, so the loop *is* its resonance and it wants the full amount. The others already ring internally, and the same feedback that makes `Delay` sing makes them lock into a continuous tone. Each is therefore scaled:
 
-| Mode | Share of the `Wiring` values | Why |
-|------|------------------------------|-----|
-| `Delay` | 100% | No internal feedback |
-| `Strng` | 22% | Its strings regenerate, and `Taps` raises their feedback too |
-| `FM` | 15% | Self-oscillates above ~0.2 |
-| `Modal` | 0% | At ringing Q even 0.04 sustains it indefinitely |
-| Struck bodies | 0% | See below |
+| Mode | Share of Knob 2 | Measured limit | Why |
+|------|-----------------|----------------|-----|
+| `Delay` | 100% | — | No internal feedback of its own |
+| `Beam` | 45% | 0.70 | |
+| `Plate` | 35% | 0.54 | |
+| `Marim` | 30% | 0.48 | |
+| `Drumh` | 28% | 0.42 | |
+| `Membr` | 15% | 0.24 | The tightest of the bodies |
+| `FM` | 13% | 0.20 | Self-oscillates just past it |
+| `Strng` | 10% | 0.14 | Its strings regenerate, and `Taps` raises their feedback too |
+| `Modal` | 0% | 0.00 | Sustains on the smallest loop that can be measured — Knob 2 damps instead, see below |
 
-The scaling is applied for you — the `Wiring` numbers on screen stay as you set them. Turning `X-X` up still lengthens the ring on `Strng` and `FM`, just over a safe range.
+The scaling is applied for you — `Feed` on the **Diag** page still reads what you set. Turning Knob 2 up lengthens the ring; the range is just different per model.
 
-These figures were measured rather than guessed, by sweeping feed against ring time with the models running inside the real feed loop (`host_dsp/loop_fixture.cpp`). Testing a resonator open-loop is misleading here: `Modal` and `FM` both decayed perfectly well on their own and still droned in the module, because the matrix was carrying them.
+These figures were measured rather than guessed, by sweeping feedback against ring time with the models running inside the real loop (`host_dsp/loop_fixture.cpp`). Testing a resonator open-loop is misleading here: `Modal` and `FM` both decayed perfectly well on their own and still droned in the module, because the loop was carrying them.
+
+The **measured limit** column is where the ring stops decaying at the worst case on every axis — `Ring` at 1.00, which quadruples the bodies' mode Q, and `Taps` at 5, which raises the models' own internal feedback — with the values in use backed off about a third for margin. The struck bodies were all at 0% in an earlier build; that figure was measured when feedback was a stored setting that defaulted high, and re-measuring properly showed they take a great deal more than that.
+
+### Knob 2 on `Modal`
+
+`Modal` is the one model that can carry no feedback loop at all — at ringing Q it sustains on the smallest amount the sweep can resolve. Rather than leave the knob dead there, `Modal` reads it as **damping**: clockwise raises mode Q and the bank rings longer, anticlockwise damps it and the ring shortens. Measured end to end that is 0.14 s against 1.02 s, so it is the same musical gesture as feedback even though the mechanism is different.
+
+The range is deliberately asymmetric. Upwards there is very little room before the bank self-oscillates on its own; downwards there is as much as you want, and damping is what makes `Modal` usable when it is too lively.
 
 ### Struck bodies
 
 These five are modal resonators built from measured partial series. They are
-excited **open-loop** — the `Wiring` page has no effect on them, because modes
-this resonant oscillate at every partial at once inside any feedback path. They
-ring when something hits them: audio at the inputs, a loaded sample, or the
-internal mallet.
+struck rather than driven: they ring when something hits them — audio at the
+inputs, a loaded sample, or the internal mallet. Knob 2 does work on all five,
+over the per-body range in the table above.
 
 Across all five, `Ring` sets the decay, `Size` makes the body bigger (lower and
 longer-ringing), `Taps` sets strike brightness and pickup position, and `Ratio`
 stretches or compresses the partial series — at `1.00` the body is physically
 true, and away from it the partials bend and it stops sounding like itself.
+`Ofst` detunes the second output against the first, independently of all that.
 
 | Mode | Body | Partial series | Character |
 |------|------|----------------|-----------|
@@ -228,8 +243,16 @@ excited by its audio inputs and the internal mallet.
 >
 > MIDI has not yet been observed working on a real module. On the test unit the
 > UART reports healthy (`MRx` reads `1` on the Diag page) but no note data
-> arrives, which points at the input path rather than the firmware. Two things
-> to check before suspecting the code:
+> arrives.
+>
+> The firmware side has been checked against `dirac`, which does receive MIDI on
+> this hardware: both take the libDaisy defaults (USART1, PB6/PB7, 31250 baud)
+> through `Bluemchen::InitMidi`, both call `StartReceive` once and `Listen` from
+> the main loop, and the parse and channel-filter paths are the same code. The
+> one thing resonators had that dirac did not — a timed settle window — has been
+> removed, and the fixed `128` the counter used to show is now understood and
+> gone (see [Diagnosing MIDI](#diagnosing-midi)). So the remaining suspects are
+> on the input path:
 >
 > 1. **The MIDI mezzanine.** The TRS jack is *not* on the main PCB. The
 >    opto-isolator (U8, a TLP2362) is, but `MIDI_TIP`/`MIDI_RING` reach it
@@ -260,12 +283,19 @@ fires a strike, then the body rings on its own for as long as `Ring` says.
 
 ### Diagnosing MIDI
 
-Give the module a couple of seconds after power-up before reading these. MIDI
-events are discarded for the first 1.5 s: the opto's output settles to idle-high
-over some time after power-up, and until it does the UART frames noise into a
-burst of bogus events. At rest, `Midi` and `Note` should both read `0`.
+At rest, `Midi` and `Note` should both read `0`. If they do not, stop here —
+that is a firmware problem, not a wiring one.
 
-Then play middle C and read the **Diag** page:
+`Midi` used to read a fixed non-zero number at power-up and never move again,
+which looked like a stuck peripheral. It was a stale queue: reception starts
+before the SD card is mounted and scanned, nothing drains the queue until the
+main loop comes up, and the opto's power-up settling gets framed into a backlog
+of bogus events that all land in the first pass. That backlog is now discarded
+on the first pass, so `Midi` starts at a true zero and **any** increment is real
+traffic. A timed settle window could not do this: if init ran past the window,
+the backlog was already counted by the time it closed.
+
+Play middle C and read the **Diag** page:
 
 | `Midi` | `Note` | `MRx` | Meaning |
 |--------|--------|-------|---------|
@@ -284,14 +314,52 @@ through to the resonator as excitation. Detection is a Schmitt trigger (0.15 up,
 0.05 down) with a 5 ms lockout, so one pulse cannot spawn a burst. Audio inputs
 are AC-coupled, so use trigger pulses rather than sustained gates.
 
-## Feed Routing
+## Feedback
 
-The feed paths are filtered and summed before the wavefolder/overdrive stage. This keeps the feedback tone consistent even when distortion is pushed.
+Knob 2 and CV 2 set how much of each resonator's output returns to its own
+input. The control is **centre-off**: straight up is no feedback at all,
+clockwise regenerates in phase, and anticlockwise regenerates inverted — which
+on a delay moves the comb's peaks onto the odd harmonics instead of the even
+ones, a different tone rather than just less of the same one. Knob and CV sum,
+so CV can reach either extreme from anywhere in the knob's travel. Read `Feed`
+on the **Diag** page to find true centre.
 
-Tip: use higher `X-X` or `Y-Y` for strong single-resonator tones; add `X-Y`/`Y-X` for stereo interplay and coupled resonances.
+The feed path is filtered before the wavefolder/overdrive stage, which keeps the
+feedback tone consistent even when distortion is pushed.
 
-`Wiring` has no effect on `Modal` or on the five struck bodies — all are excited
-open-loop. See the table under [Feedback models](#feedback-models).
+**There is no cross-channel feed.** X returns only to X and Y only to Y — see
+[Two separate instruments](#two-separate-instruments).
+
+## Two separate instruments
+
+The two channels are two independent instruments, not one instrument heard from
+two places. Each has its own excitation, its own resonator state, its own pitch,
+and its own feedback path. Nothing crosses between them.
+
+**Ratio is the exception.** It is the timbre control — chord voicing on `Strng`,
+modal stretch on `Modal`, the C:M relationship on `FM`, partial stretch on the
+struck bodies — and it applies to both channels, as do `Size`, `Taps`, `Ring`
+and the distortion and filter settings. The two are the same *kind* of
+instrument; what separates them is pitch, via `Ofst`, and whatever you patch to
+each input.
+
+Getting there meant unpicking mono summing in four places, any one of which put
+IN 2's signal on OUT 1:
+
+| Model | Was | Now |
+|-------|-----|-----|
+| `Modal` | One bank driven by `0.5·(X+Y)`, odd modes to OUT 1 and even to OUT 2 | Two banks, separately tuned and separately excited |
+| `Strng` | One set of three strings driven by `0.5·(X+Y)`, panned across the outputs | Two string sets, same voicing, tuned apart by `Ofst` |
+| `FM` | One carrier/modulator pair, one envelope from `0.5·(X+Y)` | A carrier/modulator pair and an envelope per channel |
+| Struck bodies | One body driven by `0.5·(X+Y)`, two pickup positions | Two bodies, separately tuned; the two pickup positions are kept, one per channel, so the channels still differ in timbre |
+
+The pickup and pan positions survived the change on purpose. Two identically
+tuned bodies would give two identical outputs, and the point of the second
+channel is that it is *not* a copy.
+
+The cost is memory and a little arithmetic — coefficients are now built twice
+per control tick instead of once — not any change to how a single channel
+sounds.
 
 ## Filter
 
@@ -305,19 +373,19 @@ The feed paths run through a 2-pole lowpass filter before the distortion stage.
 
 `Size` changes the effective resonator clock divisor in Delay mode. At `1`, the resonator tracks the normal pitch range. Higher values multiply the delay time, producing a larger, lower resonant body while keeping the rest of the pitch-control path intact. In Rings-style modes, `Size` maps to body size or damping behavior.
 
-`Taps` changes only the audible resonator output in Delay mode. The internal feedback path still uses the main tuned tap, while the output blends up to five shorter taps spaced at prime-like ratios. Tap gains are normalized by their total gain so adding taps creates density and reverb-like diffusion without a large level jump. In Rings-style modes, `Taps` becomes a density or brightness control. On the struck bodies it sets strike brightness — a hard mallet against a soft one — and moves the pickup position along the body, which changes which partials the two outputs favour.
+`Taps` changes only the audible resonator output in Delay mode. The internal feedback path still uses the main tuned tap, while the output blends up to five shorter taps spaced at prime-like ratios. Tap gains are normalised by the root of their summed squares — the taps sit at incommensurate fractions of the delay, so what they return is uncorrelated, and normalising by the plain sum treated it as coherent and buried the level. Adding taps now creates density and reverb-like diffusion without a large level change. In Rings-style modes, `Taps` becomes a density or brightness control. On the struck bodies it sets strike brightness — a hard mallet against a soft one — and moves the pickup position along the body, which changes which partials the two outputs favour.
 
 ## Mixes
 
-Knob 2 sets the base wave depth, and CV 2 adds unipolar modulation on top of it. `Fold` and `Drive` set how much distortion is blended into the resonator input. This applies to every `Mode`, so the Rings-style models can be excited by clean, folded, or overdriven audio. `Mix` sets the resonator wet/dry output balance.
+`Fold` and `Drive` set how much distortion is blended into the resonator input, and `Dpth` sets how hard it is driven. All three live on the **Distort** page; `Fold` and `Drive` both default to 0%, so the module is clean out of the box. This applies to every `Mode`, so the Rings-style models can be excited by clean, folded, or overdriven audio. `Mix` sets the resonator wet/dry output balance — wet and dry are level-matched, including on `Delay`.
 
 ## Tips
 
 - Patch noise or short percussive hits to excite the resonators.
-- Use `Ratio` for musical intervals (0.5 = octave down, 2.0 = octave up).
+- Use `Ofst` for musical intervals between the two outputs (0.5 = octave down, 2.0 = octave up). `Ratio` is a timbre control, not a tuning one.
+- Knob 2 straight up is silence in the feedback path, not "a bit of feedback". If a patch sounds dry and dead, that is where to start.
 - Increase `Size` for gong-like or body-resonance sounds; reduce it back to `1` for tighter pitched tracking.
 - Increase `Taps` for a wider reverb-like tail without changing feedback stability.
-- Cross-feed (`X-Y`/`Y-X`) can create stereo “chorus” effects when lightly applied.
 - Use CAL before serious tracking work, especially if CV source is not perfectly scaled. Redo it after updating from a build older than the bipolar CV 1 fix.
 - If something sounds wrong, check the **Diag** page before changing settings — `In`, `Out` and `Hz` will usually say which end of the chain the problem is at.
 - The struck bodies want transients, not drones. A short click, a mallet sample, or a MIDI note with `Malt` up will ring them; a sustained tone parked on a partial just drives the output into its clipper.
